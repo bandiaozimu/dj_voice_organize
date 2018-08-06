@@ -1,28 +1,28 @@
 
-#同人音聲資料庫系統
+#同人音声资料库系统
 
 功能
 -----------------------
 
-1. 整理作品統一檔名，目錄規則，重複的作品不刪檔並於檔名後加「-1」「-2」以此類推。
-2. 建立資料庫，紀錄作品的發行社團，屬性標籤，聲優。各作品下載數，每新增200次更新一次屬性標籤。
-3. 解壓縮，轉檔，封面，id3 tag，匯入iTunes，一鍵完成。
-4. 配合Wunderlist建立推薦清單，可定製推薦機制。
-5. 可與JDownloader，FlexGet 對接，爬蟲-下載-整理-篩選-匯入itunes全自動化。
-6. 配合Wunderlist的推播功能，可在下載完成推送通知，還可篩選推送的作品。
-7. 本程式支持主機／客戶端的配置方式，即主機運行 FlexGet，JDownloader，及保存作品資料；
-   客戶端運行解壓縮，轉檔，封面，id3 tag，匯入iTunes。
-8. 本程式會將屬性標籤(調教/中出し/ナース...等) 嵌入id3 tag的「註解」中，方便iTues建立智慧播放清單。
+1. 整理作品统一档名，目录规则，重复的作品不删档并于档名后加“-1”“-2”以此类推。
+2. 建立资料库，纪录作品的发行社团，属性标签，声优。各作品下载数，每新增200次更新一次属性标签。
+3. 解压缩，转档，封面，id3 tag，汇入iTunes，一键完成。
+4. 配合Wunderlist建立推荐清单，可定制推荐机制。
+5. 可与JDownloader，FlexGet 对接，爬虫-下载-整理-筛选-汇入itunes全自动化。
+6. 配合Wunderlist的推播功能，可在下载完成推送通知，还可筛选推送的作品。
+7. 本程式支持主机／客户端的配置方式，即主机运行 FlexGet，JDownloader，及保存作品资料；
+   客户端运行解压缩，转档，封面，id3 tag，汇入iTunes。
+8. 本程式会将属性标签(调教/中出し/ナース...等) 嵌入id3 tag的“注解”中，方便iTues建立智慧播放清单。
 
 ![Image of Yaktocat](https://i.imgur.com/K5dpv8L.jpg)
 ![Image of Yaktocat](https://i.imgur.com/NutkgUX.png)
 ![Image of Yaktocat](https://i.imgur.com/WP6r4n0.png)
 
-環境
+环境
 -----------------------
-本程式目前只對OSX做過調適。
+本程式目前只对OSX做过调适。
 
-本程式需要以下perl 模組，都可在cpan上找到：
+本程式需要以下perl 模组，都可在cpan上找到：
 
     - Web::Query;
     - JSON;
@@ -38,7 +38,7 @@
     - DateTime;
 
 
-本程式需要以下程式協同運行：
+本程式需要以下程式协同运行：
 
     - atomicparsley
     - eyeD3
@@ -49,9 +49,9 @@
     - perl
     - curl
 
-安裝協作程式
+安装协作程式
 -----------------------
-`atomicparsley`，`fdk-aac`，`eyeD3`，`gnu-sed`和`realpath`在OSX下可用`brew`或`pip`安裝：
+`atomicparsley`，`fdk-aac`，`eyeD3`，`gnu-sed`和`realpath`在OSX下可用`brew`或`pip`安装：
 
 ```
 brew install atomicparsley
@@ -65,33 +65,33 @@ brew install gnu-sed
 brew install coreutils
 ```
 
-安裝主機端程式
+安装主机端程式
 -----------------------
-1. 將DLSiteDB.db.sample重新命名為DLSiteDB.db：
+1. 将DLSiteDB.db.sample重新命名为DLSiteDB.db：
 
     ```
     cd dj_voice_organize
     mv DLSiteDB.db.sample DLSiteDB.db
     ```
 
-2. 編輯`DJVoiceConfig.pm.sample` 根據你的環境修改以下參數，並重新命名為`DJVoiceConfig.pm`：
+2. 编辑`DJVoiceConfig.pm.sample` 根据你的环境修改以下参数，并重新命名为`DJVoiceConfig.pm`：
 
     ```
     $WORKING\_DIR
     $CATCHE\_DIR
-    $JDOWNLOADER\_DOWNLOAD\_DIR  # Jdownloader 的下載路徑，最好是給音聲作品專用，喂的資料越亂，出錯的機率會升高。
+    $JDOWNLOADER\_DOWNLOAD\_DIR  # Jdownloader 的下载路径，最好是给音声作品专用，喂的资料越乱，出错的机率会升高。
     $PUSH\_DATABASE\_PATH
     $PUSH\_STORAGE\_PATH
     ```
 
-3. 運行下列指令，會根據`DJVoiceConfig.pm` 定義的路徑修改各shell script。
+3. 运行下列指令，会根据`DJVoiceConfig.pm` 定义的路径修改各shell script。
 
     ```
     ./setup -p
     ```
 
-4. 開始整理作品，將要建檔的作品檔案都放入目錄裡，假設在`/Users/hentai/myVoicePart1` 裡，然後運行下列指令，建議分
-多次處理，每次100個左右，被DLSite拉黑就不用玩了：
+4. 开始整理作品，将要建档的作品档案都放入目录里，假设在`/Users/hentai/myVoicePart1` 里，然后运行下列指令，建议分
+多次处理，每次100个左右，被DLSite拉黑就不用玩了：
 
     ```
     ./buildVoiceWork.sh -s /Users/hentai/myVoicePart1
@@ -100,120 +100,120 @@ brew install coreutils
     ...
     ```
 
-- 注1：資料庫裡有我已經建檔3000+個作品的基本資料，所以不會全都從DLSite上撈，但封面每部作品都要撈，動作太密集有被
+- 注1：资料库里有我已经建档3000+个作品的基本资料，所以不会全都从DLSite上捞，但封面每部作品都要捞，动作太密集有被
 拉黑的可能。
-- 注2： -s 是安靜模式，此模式下`buildVoiceWork.sh` 不會做與wunderlist推播通知相關的運算。
-- 注3：若不指定路徑，`buildVoiceWork.sh` 預設會處理 `$JDOWNLOADER\_DOWNLOAD\_DIR`。
+- 注2： -s 是安静模式，此模式下`buildVoiceWork.sh` 不会做与wunderlist推播通知相关的运算。
+- 注3：若不指定路径，`buildVoiceWork.sh` 预设会处理 `$JDOWNLOADER\_DOWNLOAD\_DIR`。
 
 
-與 WunderList 協作
+与 WunderList 协作
 -----------------------
 
-1. 本腳本利用wunderlist作為清單和推播介面，請註冊兩個帳號，一發一收。發送端要登入以下網址申請開發者帳號，並建立App：
+1. 本脚本利用wunderlist作为清单和推播介面，请注册两个帐号，一发一收。发送端要登入以下网址申请开发者帐号，并建立App：
 
    [https://developer.wunderlist.com/apps](https://developer.wunderlist.com/apps)
 
-   建立App時會要求填入app url和callback url，隨便填即可。建好後可拿到client id，
-   再點右下角的「CREATE ACCESS TOKEN」按鈕可再得到一組access token，記下這兩組號碼，於下個步驟填入`DJVoiceConfig.pm`。
+   建立App时会要求填入app url和callback url，随便填即可。建好后可拿到client id，
+   再点右下角的“CREATE ACCESS TOKEN”按钮可再得到一组access token，记下这两组号码，于下个步骤填入`DJVoiceConfig.pm`。
 
    ![Image of Yaktocat](http://i.imgur.com/TW3IH8P.png)
 
-2. 編輯`DJVoiceConfig.pm` 修改以下參數：
+2. 编辑`DJVoiceConfig.pm` 修改以下参数：
 
     ```
-    $POP\_DATABASE\_PATH    # setup -w 會透過此參數找資料庫
+    $POP\_DATABASE\_PATH    # setup -w 会透过此参数找资料库
     $WUNDERLIST\_TOKEN
     $WUNDERLIST\_CLIENT\_ID
     $WUNDERLIST_RECEIVER_EMAIL
     ```
 
-3. 運行下列指令，完成後WunderList的接收端帳號會收到兩個清單分享，選同意。
+3. 运行下列指令，完成后WunderList的接收端帐号会收到两个清单分享，选同意。
 
     ```
     ./setup -w
     ```
 
-4. 兩個清單分別為： ダウンロード(下載)，オススメ作品(推薦作品)，「ダウンロード」會在主機端處理新作品時用到；
-「オススメ作品」 則會在客戶端的iTunes匯入作品時使用。
+4. 两个清单分别为： ダウンロード(下载)，オススメ作品(推荐作品)，“ダウンロード”会在主机端处理新作品时用到；
+“オススメ作品” 则会在客户端的iTunes汇入作品时使用。
 
-- 注1：往後如果想設計自己的推薦清單，可以先修改 `@RECOMMEND\_CRITERIA\_ARRAY`，再運行此指令，運行過程中`setup -w` 會
-檢查 query 的語法，沒問題才新增待辦事項(task)。
+- 注1：往后如果想设计自己的推荐清单，可以先修改 `@RECOMMEND\_CRITERIA\_ARRAY`，再运行此指令，运行过程中`setup -w` 会
+检查 query 的语法，没问题才新增待办事项(task)。
 
-- 注2：只要 `$POP\_DATABASE\_PATH` 正確， `setup -w` 不論在主機端還是客戶端都能運行。
+- 注2：只要 `$POP\_DATABASE\_PATH` 正确， `setup -w` 不论在主机端还是客户端都能运行。
 
 
-安裝客戶端程式
+安装客户端程式
 -----------------------
 
-1. 請確認客戶端的預設解壓縮程式，在完成解壓縮後會刪除壓縮檔，本程式依靠壓縮檔的消失來判斷解壓完成與否。
+1. 请确认客户端的预设解压缩程式，在完成解压缩后会删除压缩档，本程式依靠压缩档的消失来判断解压完成与否。
 
-2. 將主機端的 `dj\_voice\_organize` 資料夾複製一份到客戶端上，如果沒有做主機／客戶端配置，則跳至步驟3。
+2. 将主机端的 `dj\_voice\_organize` 资料夹复制一份到客户端上，如果没有做主机／客户端配置，则跳至步骤3。
 
-3. 編輯客戶端的`DJVoiceConfig.pm` 根據你的環境修改以下參數：
+3. 编辑客户端的`DJVoiceConfig.pm` 根据你的环境修改以下参数：
 
     ```
     $WORKING\_DIR
-    $POP\_STORAGE\_PATH      # 以客戶端為起點，指向與主機端$PUSH\_STORAGE\_PATH 所指的同一個資料夾 
-    $POP\_DATABASE\_PATH     # 以客戶端為起點，指向與主機端$PUSH\_DATABASE\_PATH 所指的同一個資料庫 
+    $POP\_STORAGE\_PATH      # 以客户端为起点，指向与主机端$PUSH\_STORAGE\_PATH 所指的同一个资料夹 
+    $POP\_DATABASE\_PATH     # 以客户端为起点，指向与主机端$PUSH\_DATABASE\_PATH 所指的同一个资料库 
     $ITUNES\_PATH
     ```
 
-4. 運行下列指令，會根據`DJVoiceConfig.pm` 定義的路徑修改各shell script。
+4. 运行下列指令，会根据`DJVoiceConfig.pm` 定义的路径修改各shell script。
 
     ```
     ./setup -p
     ```
 
-5. 運行下列指令，會在WunderList的推薦清單裡填入符合條件的作品，第一次運行會比較花時間：
+5. 运行下列指令，会在WunderList的推荐清单里填入符合条件的作品，第一次运行会比较花时间：
 
     ```
     ./reflashRecommendList
     ```
 
-- 注：可修改`DJVoiceConfig.pm` 的`$COLUMN\_OF\_RECOMMEND\_LIST` 參數，增加清單長度。
+- 注：可修改`DJVoiceConfig.pm` 的`$COLUMN\_OF\_RECOMMEND\_LIST` 参数，增加清单长度。
 
 
-運行客戶端程式
+运行客户端程式
 -----------------------
 
-至此，已完成初步配置了，本程式在客戶端提供下列指令：
+至此，已完成初步配置了，本程式在客户端提供下列指令：
 
-  下載RJ123456，RJ789012到客戶端，並匯入到iTunes，-d 是下載的意思：
+  下载RJ123456，RJ789012到客户端，并汇入到iTunes，-d 是下载的意思：
 
   ```
   ./downloadVoiceWork.sh -d RJ123456 RJ789012 ...
   ```
 
-  沒有指定作品時，將下載WunderList裡被勾選的作品，並匯入到iTunes：
+  没有指定作品时，将下载WunderList里被勾选的作品，并汇入到iTunes：
 
   ```
   ./downloadVoiceWork.sh -d
   ```
 
-  沒有 `-d` 時，僅計算被勾選的作品需要的空間，不下載：
+  没有 `-d` 时，仅计算被勾选的作品需要的空间，不下载：
 
   ```
   ./downloadVoiceWork.sh
   ./downloadVoiceWork.sh RJ123456 RJ789012 ...
   ```
 
-  曾經匯入iTunes的作品將會在資料庫裡作標記，將被略過，除非在指令裡加 `-f` ，可強制下載：
+  曾经汇入iTunes的作品将会在资料库里作标记，将被略过，除非在指令里加 `-f` ，可强制下载：
 
   ```
   ./downloadVoiceWork.sh -f -d RJ123456 RJ789012 ...
   ```
 
-`downloadVoiceWork.sh`會在匯入iTunes後順帶執行`reflashRecommendList`更新推薦清單。
+`downloadVoiceWork.sh`会在汇入iTunes后顺带执行`reflashRecommendList`更新推荐清单。
 
 
-與JDownloader 2 協作
+与JDownloader 2 协作
 -----------------------
 
-1. 本程式可以配合JDownloader 2 監控下載路徑，過濾所有檔名含有RJ######的壓縮檔，下載完成自動整理進資料庫，
-並篩選出你有興趣的作品做手機的推播通知。
+1. 本程式可以配合JDownloader 2 监控下载路径，过滤所有档名含有RJ######的压缩档，下载完成自动整理进资料库，
+并筛选出你有兴趣的作品做手机的推播通知。
 
 
-2. 編輯主機端的`DJVoiceConfig.pm` 根據你的喜好修改以下參數：
+2. 编辑主机端的`DJVoiceConfig.pm` 根据你的喜好修改以下参数：
 
     ```
     $NOTIFY\_DEFAULT\_THRESHOLD
@@ -223,23 +223,23 @@ brew install coreutils
     %NOTIFY\_CRITERIA\_HASH\_CIRCLE
     ```
 
-   新作品的推播篩選，是根據發行社團，屬性標籤，聲優決定的。三者決定一個閥值，當下載數大於閥值則發
+   新作品的推播筛选，是根据发行社团，属性标签，声优决定的。三者决定一个阀值，当下载数大于阀值则发
    送推播通知。
-   計算閥值規則如下：
+   计算阀值规则如下：
 
        缺省值(DEFAULT) ------------\
-       喜好的屬性標籤(PASS_TAG) ---取最小值----
-       聲優(VOCAL) ----------------/           \
+       喜好的属性标签(PASS_TAG) ---取最小值----
+       声优(VOCAL) ----------------/           \
                                                 \
-       討厭的屬性標籤(HOLD_TAG) -------------取最大值------
+       讨厌的属性标签(HOLD_TAG) -------------取最大值------
                                                            \
-       發行社團(CIRCLE) ---------------------------------取最小值
+       发行社团(CIRCLE) ---------------------------------取最小值
 
-3. 開啟Jdownloader 2 的script 功能，加入下列代碼：
+3. 开启Jdownloader 2 的script 功能，加入下列代码：
 
     ```
     //Add your script here. Feel free to use the available api properties and methods
-    var script = '/你/的/路/徑/dj_voice_organize/jdFinishEventHandler.sh'
+    var script = '/你/的/路/径/dj_voice_organize/jdFinishEventHandler.sh'
 
     //var path = archive.getFolder()
     //var name = archive.getName()
@@ -252,46 +252,46 @@ brew install coreutils
     log(callSync(command))
     ```
 
-4. 代碼的觸發條件我是選Package Finished，如果你是因為壓縮檔有密碼想讓JDownloader2 做解壓縮，
-可選Archive Extraction Finished。
+4. 代码的触发条件我是选Package Finished，如果你是因为压缩档有密码想让JDownloader2 做解压缩，
+可选Archive Extraction Finished。
 
-與 FlexGet 協作
+与 FlexGet 协作
 -----------------------
-為避免過多的爬蟲程式對網站造成攻擊，我只列出使用爬蟲腳本的必要條件：
+为避免过多的爬虫程式对网站造成攻击，我只列出使用爬虫脚本的必要条件：
 
 1. 修改`DJVoiceConfig.pm` ：
 
     ```
-    $JDOWNLOADER\_WATCH\_DIR  # Jdownloader 2 監控的資料夾，放入.crawjob 就會新增下載任務
-    $USING\_FLEXGET           # 設為1
+    $JDOWNLOADER\_WATCH\_DIR  # Jdownloader 2 监控的资料夹，放入.crawjob 就会新增下载任务
+    $USING\_FLEXGET           # 设为1
     ```
 
-2. FlexGet 的 exec 需完成以下幾項工作：
+2. FlexGet 的 exec 需完成以下几项工作：
 
-    - 在 Jdownloader 2 監控的資料夾，放入.crawjob 就會新增下載任務
+    - 在 Jdownloader 2 监控的资料夹，放入.crawjob 就会新增下载任务
 
-    - 檢查資料庫裡是否已有重複的作品，欄位`read = 0`或沒有id相符合的作品才下載
+    - 检查资料库里是否已有重复的作品，栏位`read = 0`或没有id相符合的作品才下载
     
-    - 每當開始新的下載任務，請對資料庫下這條指令：
+    - 每当开始新的下载任务，请对资料库下这条指令：
 
         ```
           UPDATE JDownLoadVar SET value = 1 WHERE name = 'voiceWorkTrigger';
         ```
 
 
-給開發者：
+给开发者：
 -----------------------
-1. 下列議題如果有開發者完成，我會用 1.77 TB 的資料回報：
+1. 下列议题如果有开发者完成，我会用 1.77 TB 的资料回报：
 
-    - 我的系統是OSX，本程式若要在其它作業系統上運行，必需做修改，完成者，重謝。
+    - 我的系统是OSX，本程式若要在其它作业系统上运行，必需做修改，完成者，重谢。
 
-    - 我的環境是在寫這個腳本的過程裡逐漸完備的，寫這文件時對如何安裝atomicparsley，eyeD3，fdk-aac，gnu-sed，
-    perl各模組等都只能憑記憶寫，如果有高手能寫一個安裝這些協作軟件的腳本，重謝。
+    - 我的环境是在写这个脚本的过程里逐渐完备的，写这文件时对如何安装atomicparsley，eyeD3，fdk-aac，gnu-sed，
+    perl各模组等都只能凭记忆写，如果有高手能写一个安装这些协作软件的脚本，重谢。
 
-    - Wunderlist被Mircrsoft買斷，可能在一到兩年內停止服務，所以我寫到相關的功能都是用簡單的curl呼叫，沒有包裝，
-    如果有高手能用ticktick，Microsoft to-do或任何適合的app取代，重謝。
+    - Wunderlist被Mircrsoft买断，可能在一到两年内停止服务，所以我写到相关的功能都是用简单的curl呼叫，没有包装，
+    如果有高手能用ticktick，Microsoft to-do或任何适合的app取代，重谢。
 
-2. 任何有用的小修小改，我都會以我正在用的爬蟲腳本做回報，不是多難的腳本，但爬蟲腳本用的人多了，或太頻繁
-的刷新，網站就會防，然後我就得改，所以只給懂程式的人。
+2. 任何有用的小修小改，我都会以我正在用的爬虫脚本做回报，不是多难的脚本，但爬虫脚本用的人多了，或太频繁
+的刷新，网站就会防，然后我就得改，所以只给懂程式的人。
 
 
