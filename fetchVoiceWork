@@ -1,0 +1,110 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+use DBI;
+use Data::Dumper;
+use Getopt::Std;
+
+use DJVoiceConfig;
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+our $VERSION = 0.1;
+my %opts;
+getopts('df', \%opts);
+
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+my $dir         = $DJVoiceConfig::POP_STORAGE_PATH;
+my $database    = $DJVoiceConfig::POP_DATABASE_PATH;
+my $token       = $DJVoiceConfig::WUNDERLIST_TOKEN;
+my $client_id   = $DJVoiceConfig::WUNDERLIST_CLIENT_ID;
+my $server_url  = $DJVoiceConfig::WUNDERLIST_API_URL;
+my $my_uid      = $DJVoiceConfig::WUNDERLIST_RECEIVER_UID;
+my $ren_uid     = $DJVoiceConfig::WUNDERLIST_SENDER_UID;
+
+my @list_id_array = (
+    $DJVoiceConfig::NEW_VOICEWORK_LIST_ID, # downloaded voiceWork list
+    $DJVoiceConfig::RECOMMEND_LIST_ID  # オススメ作品
+);
+
+my $command;
+my $respond;
+
+my @data_array;
+my @id_array;
+if( $#ARGV == -1){
+    foreach(@list_id_array){
+        my $list_id = $_;
+        $command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+                    " -X GET -H \"Content-Type:application/json\"" . 
+                    " $server_url/subtasks?list_id=$list_id";
+        $respond = `$command`;
+
+        my $data = decode_json( encode('UTF-8', $respond) );
+        @data_array = @$data;
+        foreach(@data_array){
+            my %data_hash = %$_;
+            if($data_hash{'completed'} == 1){
+                $data_hash{'title'} =~ /(RJ[0-9]{6})/;
+                @id_array = (@id_array, "'$1'");
+            }
+        }
+    }
+}else{
+    foreach(@ARGV){
+        @id_array = (@id_array, "'$1'") if(/(RJ[0-9]{6})/);;
+    }
+}
+
+my $id_string;
+my $query;
+if(!defined $opts{'f'}){
+    $id_string = join (', ', @id_array);
+    $query = "SELECT id FROM voiceWork WHERE CAST(read AS int) > 0 " . 
+        "AND CAST(read AS int) < 8 AND id IN ($id_string);";
+    #say $query;
+    chomp(my $download_list =  `sqlite3 $database "$query"`);
+    @id_array = split( /\n/, $download_list);
+}
+#print Dumper(@id_array);
+    
+
+if($#id_array != -1){
+    foreach (@id_array) {
+        $_ = "-name '*$_*'";
+    }
+    my $id_string = join (' -o ', @id_array);
+    my $command = "find '$dir' -maxdepth 2 \\( $id_string \\) ";
+    if(defined $opts{'d'}){
+        say '-----';
+        print 'download .....';
+        $command .= "-exec cp -rf '{}' copy \\;";
+        say $command;
+        system($command);
+
+        $id_string =~ s/-name //g;
+        $id_string =~ s/\*//g;
+        $id_string =~ s/ -o/,/g;
+        say 'done';
+
+    }else{
+        say '-----';
+        $command .= '-print0 | xargs -0 du -sch | sed "s/\/.*\///g"';
+        say $command;
+        system($command);
+    }
+
+}else{
+    say 'There is no checked new voiceWork';
+}
+
+

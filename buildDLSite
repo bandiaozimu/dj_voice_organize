@@ -1,0 +1,151 @@
+#! /usr/bin/perl
+
+use 5.014;
+
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+use DBI;
+use Data::Dumper;
+use File::Copy;
+use File::Basename;
+use File::Find ();
+use File::chdir;
+use smart_mv;
+use DJVoiceConfig;
+
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+my $destDir = $DJVoiceConfig::PUSH_STORAGE_PATH;
+my $working_dir = $DJVoiceConfig::WORKING_DIR;
+my $dlc_json_file = $ARGV[0];
+our $target = $ARGV[1];
+our @all_file;
+
+open JSONF, "<", $dlc_json_file;
+
+my $dlc_json;
+foreach my $line (<JSONF>){
+    chomp($line);
+    $line =~ s/^\s*//;
+    $dlc_json .= $line if(!($line =~ /^$/));
+}
+
+close JSONF;
+
+my $data = decode_json( $dlc_json );
+my @data_array = @$data;
+
+#$target .= '/' if( substr($target, -1) ne '/');
+
+{
+    #chdir $ARGV[0] only in this section
+    local $CWD = $target;
+
+    File::Find::find(
+        { 
+            wanted => sub {
+                if(/^.*RJ.*\z/s && -d $_){
+                    my $depth = tr!/!!; # count slashes to get depth
+                    return if  $depth > 1;
+                    Encode::_utf8_on($_);
+                    push @all_file, $_;
+                }
+            },
+            no_chdir => 1 
+        }, 
+        '.' 
+    );
+
+}
+
+my $driver = "SQLite";
+my $database = $DJVoiceConfig::PUSH_DATABASE_PATH;
+my $dsn = "DBI:$driver:dbname=$database";
+my $userid = "";
+my $password = "";
+my $dbh = DBI->connect($dsn, $userid, $password, { RaiseError => 1 }) 
+                      or die $DBI::errstr;
+
+foreach (@all_file){
+
+    my $dir = $_;
+    #my $dir = $all_file[0];
+    if(! ($dir =~ /(RJ[0-9]{6})/) ){
+        die 'need RJ###### in $ARGV[1]';
+    }
+    my $id = $1;
+
+    my $stmt = "SELECT COUNT(id), circle_id, circle_name FROM voiceWork WHERE id = '$id';";
+    my $sth = $dbh->prepare( $stmt );
+    my $rv = $sth->execute() or die $DBI::errstr;
+    if($rv < 0){
+        print $DBI::errstr;
+    }
+    my @row = $sth->fetchrow_array();
+
+    my $param;
+    my $fetch_success = $row[0];
+    if($fetch_success) { 
+        $param->{'circle_id' }      =  decode('UTF-8',  $row[1]);
+        $param->{'circle_name' }    =  decode('UTF-8',  $row[2]);
+
+        my ($current_work) = grep { $_->{id} eq $id }@data_array;
+        $param->{'image'} = $current_work->{'image'};
+        #say "$param->{'image'} , $param->{'circle_id' } , $param->{'circle_name' }";
+    }
+    
+    my $json;
+    if( !($fetch_success && $param->{'image'}) ){
+        $json = `$working_dir/grapDLSite '$id'`;
+        #say $json;
+        $param = decode_json($json);
+    }
+
+    #-----  grap image
+    {
+        local $CWD = $target;
+        my $file = my $image = $param->{'image'};
+        $file =~ s/^.*\///;
+        $file = "$dir/$file";
+        $file =~ s/"/\\"/g;
+        say "grap image:$file";
+        my $command = 'curl -s -o "' . $file . '" ' . "'$image'";
+        say $command;
+        system($command) if( ! -e $file);
+    }
+    
+    #-----  insert DB or set read = 0 -> 1
+    if($json =~ /'/ || $json eq ''){
+        # exception : json with ( ' )
+        $json = sprintf '{"id":"%s"}' , $id;
+    }
+    #my $err_msg = `'`;
+#    say $err_msg;
+    if(system("$working_dir/insertDLSiteDB '$json'")){
+        die 'somthing wrong with insertDLSiteDB $json';
+    }
+    
+    #-----  orgnize File
+#    next;
+    {
+        local $CWD = $target;
+        $param->{'circle_name'} =~ s/\//@/g;
+        my $target_dir = "$destDir/$param->{'circle_id'} $param->{'circle_name'}/";
+        #say $target_dir;
+        
+        mkdir "$target_dir", 0755 or warn "mkdir $target_dir fail: $!" if( ! -e -d $target_dir );
+        smart_move_in($dir, $target_dir);
+    }
+
+}
+#----- update DL count
+system("$working_dir/updateDLSiteDB $dlc_json_file");
+
+
+

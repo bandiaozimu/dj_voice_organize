@@ -1,0 +1,117 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+use DBI;
+use Data::Dumper;
+use DJVoiceConfig;
+
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+my $target_list_id = $DJVoiceConfig::NEW_VOICEWORK_LIST_ID;
+my $working_dir    = $DJVoiceConfig::WORKING_DIR;
+
+my $json = '';
+foreach my $line (<>){
+    chomp($line);
+    $line =~ s/^\s*//;
+    $json .= $line if(!($line =~ /^$/));
+}
+
+#say $json;
+my $data = decode_json( encode('UTF-8', $json) );
+my @data_array = @$data;
+
+######## there's nothing to push
+exit 0 if($#data_array == -1);
+
+
+@data_array = sort aaaa @data_array;
+
+sub aaaa{
+
+    my %ah = %$a;
+    my %bh = %$b;
+#    my $res = $ah{'dl_count'} <=> $bh{'dl_count'};
+#    say "$ah{'dl_count'}," . "$bh{'dl_count'},". "$res";
+    $bh{'dl_count'} <=> $ah{'dl_count'};
+}
+#print Dumper(@data_array);
+
+open LIST, ">:encoding(UTF-8)", "notify_list";
+my $max_dl_count = 0;
+my %head_hash ;
+my @title_array = ();
+my $note;
+my @id_read_array = ();
+foreach (@data_array) {
+    my %data_hash = %$_;
+    my $id          = $data_hash{'id'};
+    my $dl_count    = $data_hash{'dl_count'};
+    my $tag         = $data_hash{'tag'};
+    my $string      = sprintf('{"id":"%s","read":2}', $id);
+    push @id_read_array, $string;
+    $tag =~ s/(CV|TAG)://g;
+    $tag =~ s/\|/\n/g;
+    @title_array = ( "$dl_count | $data_hash{'title'} $id" ,@title_array );
+    $note .=    "=============================\n" .
+                "$data_hash{'title'}\n" .
+                "-----------------------------\n" .
+                "$tag\n" .
+                "DL:$dl_count\n" .
+                "---------------\n" .
+                "$data_hash{'text'}\n";
+
+
+    if( $dl_count > $max_dl_count ) {
+        $max_dl_count = $dl_count;
+        %head_hash = %data_hash;
+    }
+    print LIST "$id\n";
+}
+
+close LIST;
+my $dlsite_url = `$working_dir/createDLSiteUrl notify_list`;
+$note = $dlsite_url . "\n" . $note;
+my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime();
+$mon++;
+$head_hash{'title'} .= " と$#data_array つ" if ($#data_array > 0);
+my %result = (
+    list_id     => $target_list_id,
+    title       => "$mon/$mday" . $head_hash{'title'},
+    sub_task    => \@title_array,
+    note        => $note,
+    comment     => "$head_hash{'title'}入ました",
+);
+
+my $outputUtf8 = encode_json \%result;
+Encode::_utf8_on($outputUtf8);
+open NOTIFY, ">:encoding(UTF-8)", "notify.json";
+print NOTIFY $outputUtf8;
+close NOTIFY;
+my $error_code = `$working_dir/sendWunderlist notify.json`;
+#my $error_code = 0;
+system('rm notify.json');
+
+if(! $error_code){
+    $json = join( ',' , @id_read_array);
+    $json = '[' . $json . ']';
+    open UPDATE, ">:encoding(UTF-8)", "update_read.json";
+    print UPDATE $json;
+    close UPDATE;
+
+    my $db_error_code = `$working_dir/updateDLSiteDB update_read.json`;
+    system('rm update_read.json');
+}
+
+system('rm notify_list');
+
+

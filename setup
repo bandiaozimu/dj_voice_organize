@@ -1,0 +1,170 @@
+#! /usr/bin/perl
+
+use 5.014;
+use strict; use warnings;
+use Encode;
+use JSON;
+use Getopt::Std;
+use Data::Dumper;
+use DJVoiceConfig;
+
+$Getopt::Std::STANDARD_HELP_VERSION = 1;
+our $VERSION = 0.1;
+my %opts;
+getopts('pw', \%opts);
+
+if(defined $opts{p}){
+    (my $working_dir    = $DJVoiceConfig::WORKING_DIR)                 =~ s/\//\\\//g;
+    (my $jdownload_dir  = $DJVoiceConfig::JDOWNLOADER_DOWNLOAD_DIR)    =~ s/\//\\\//g;
+    (my $catche_dir     = $DJVoiceConfig::CATCHE_DIR)                  =~ s/\//\\\//g;
+
+
+    system("gsed -i \"/^working_dir=/s/=.*/=\'$working_dir\'/\" buildVoiceWork.sh");
+    system("gsed -i \"/^jdownload_dir=/s/=.*/=\'$jdownload_dir\'/\" buildVoiceWork.sh");
+    system("gsed -i \"/^catche_dir=/s/=.*/=\'$catche_dir\'/\" buildVoiceWork.sh");
+
+    system("gsed -i \"/^working_dir=/s/=.*/=\'$working_dir\'/\" downloadVoiceWork.sh");
+    system("gsed -i \"/^working_dir=/s/=.*/=\'$working_dir\'/\" jdFinishEventHandler.sh");
+}
+
+if(defined $opts{w}){
+    my $token               = $DJVoiceConfig::WUNDERLIST_TOKEN;
+    my $client_id           = $DJVoiceConfig::WUNDERLIST_CLIENT_ID;
+    my $server_url          = $DJVoiceConfig::WUNDERLIST_API_URL;
+    my $email               = $DJVoiceConfig::WUNDERLIST_RECEIVER_EMAIL;
+    my $download_list_id    = $DJVoiceConfig::NEW_VOICEWORK_LIST_ID;
+    my $recommand_list_id   = $DJVoiceConfig::RECOMMEND_LIST_ID;
+    my $inbox_id            = $DJVoiceConfig::SENDER_INBOX_LIST_ID;
+
+    my $command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+                " -X GET -H \"Content-Type:application/json\"" . 
+                " $server_url/lists";
+    my $respond = `$command`;
+    my $data = decode_json( encode('UTF-8', $respond) );
+    my @list_array = @$data;
+    my ($inbox)          = grep { $_->{title}   eq 'inbox'              }@list_array;
+    my ($download_list)  = grep { $_->{id}      eq $download_list_id    }@list_array;
+    my ($recommand_list) = grep { $_->{id}      eq $recommand_list_id   }@list_array;
+
+    if($inbox->{id} eq ''){
+        say "***** inbox id missing!! ";
+        exit;
+    }
+    if($inbox->{id} ne $inbox_id ){
+        say "set \$SENDER_INBOX_LIST_ID to $inbox->{id}";
+        system("gsed -i \"/SENDER_INBOX_LIST_ID/s/$inbox_id/$inbox->{id}/\" DJVoiceConfig.pm");
+    }
+    # ===== create list
+
+    if(!$download_list){
+        my $post_data_json = '{"title":"ダウンロード3"}';
+        my $command =   "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+                        " -X POST -H \"Content-Type:application/json\"" . 
+                        " -d '$post_data_json' $server_url/lists";
+    
+        my $respond = `$command`;
+        $download_list = decode_json( encode('UTF-8', $respond) );
+        say "create list: $download_list->{title}";
+        if($download_list->{id} eq ''){
+            say "***** something wrong with wunderlist:";
+            say "$respond";
+            exit;
+        }
+        $post_data_json = '{"list_id":'.$download_list->{id}.',"email":"'.$email.'","muted":false}';
+        $command =   "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+                     " -X POST -H \"Content-Type:application/json\"" . 
+                     " -d '$post_data_json' $server_url/memberships";
+    
+        $respond = `$command`;
+        say "set \$NEW_VOICEWORK_LIST_ID to $download_list->{id}";
+        system("gsed -i \"/NEW_VOICEWORK_LIST_ID/s/$download_list_id/$download_list->{id}/\" DJVoiceConfig.pm");
+    }
+
+    my $share_recommand_enable = 0;
+    if(!$recommand_list){
+        my $post_data_json = '{"title":"オススメ作品3"}';
+        $command =   "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+                        " -X POST -H \"Content-Type:application/json\"" . 
+                        " -d '$post_data_json' $server_url/lists";
+    
+        $respond = `$command`;
+        $recommand_list = decode_json( encode('UTF-8', $respond) );
+        if($recommand_list->{id} eq ''){
+            say "***** something wrong with wunderlist:";
+            say "$respond";
+            exit;
+        }
+        $share_recommand_enable = 1;
+        say "create list: $recommand_list->{title}";
+        say "set \$RECOMMEND_LIST_ID to $recommand_list->{id}";
+        system("gsed -i \"/RECOMMEND_LIST_ID/{s/$recommand_list_id/$recommand_list->{id}/}\" DJVoiceConfig.pm");
+    }
+    my $list_id = $recommand_list->{id};
+
+    # ===== add recommand task
+    $command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+             " -X GET -H \"Content-Type:application/json\"" . 
+             " $server_url/tasks?list_id=$recommand_list->{id}";
+    $respond = `$command`;
+    $data = decode_json( encode('UTF-8', $respond) );
+    my @task_array = @$data;
+
+    foreach(@DJVoiceConfig::RECOMMEND_CRITERIA_ARRAY){
+        my $task_id = $_->{task_id};
+        my $title   = $_->{title};
+        my $query   = $_->{query};
+        my ($online_task) = grep { $_->{id} eq $task_id }@task_array;
+
+        if(!$online_task){
+            $respond = `./voiceWorkSelection $task_id 3`;
+            if(!$respond){
+                print "*** there is no work selected please check the query of $title : \n";
+                print "$query\n";
+                next;
+            }
+            say '-----';
+            say "making new task $title, here are sample of selected works:";
+            print $respond;
+            my $post_data_json = '{"list_id":'.$list_id.',"title":"'.$title.'"}';
+            my $command =   "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+                            " -X POST -H \"Content-Type:application/json\"" . 
+                            " -d '$post_data_json' $server_url/tasks";
+    
+            my $respond = `$command`;
+            $data = decode_json( encode('UTF-8', $respond) );
+            my $new_task_id = $data->{id};
+            if($new_task_id eq ''){
+                say "***** something wrong with wunderlist:";
+                say "$respond";
+                exit;
+            }
+
+            $post_data_json = '{"task_id":'.$new_task_id.',"content":" "}';
+            $command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+                        " -X POST -H \"Content-Type:application/json\"" . 
+                        " -d '$post_data_json' $server_url/notes";
+            $respond = `$command`;
+            $data = decode_json( encode('UTF-8', $respond) );
+            my $new_note_id = $data->{id};
+            if($new_note_id eq ''){
+                say "***** something wrong with wunderlist:";
+                say "$respond";
+                exit;
+            }
+            
+            say "replace $task_id to $new_task_id";
+            system("gsed -i '/RECOMMEND_CRITERIA_ARRAY/,/$task_id/{s/$task_id/$new_task_id/}' DJVoiceConfig.pm");
+        }
+    }
+    # ===== share list
+    if( $share_recommand_enable ){
+        my $post_data_json = '{"list_id":'.$recommand_list->{id}.',"email":"'.$email.'","muted":false}';
+        my $command =   "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+                        " -X POST -H \"Content-Type:application/json\"" . 
+                        " -d '$post_data_json' $server_url/memberships";
+    
+        my $respond = `$command`;
+    }
+}
+
+

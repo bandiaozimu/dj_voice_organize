@@ -1,0 +1,77 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+use DBI;
+use Data::Dumper;
+use Getopt::Std;
+use DJVoiceConfig;
+no warnings 'experimental::smartmatch';
+
+my $token       = $DJVoiceConfig::WUNDERLIST_TOKEN;
+my $client_id   = $DJVoiceConfig::WUNDERLIST_CLIENT_ID;
+my $server_url  = $DJVoiceConfig::WUNDERLIST_API_URL;
+my $my_uid      = $DJVoiceConfig::WUNDERLIST_RECEIVER_UID;
+my $ren_uid     = $DJVoiceConfig::WUNDERLIST_SENDER_UID;
+my $list_id     = $DJVoiceConfig::NEW_VOICEWORK_LIST_ID;
+
+my $json = '';
+foreach my $line (<>){
+    chomp($line);
+    $line =~ s/^\s*//;
+    $json .= $line if(!($line =~ /^$/));
+}
+
+#say $json;
+my $data = decode_json( encode('UTF-8', $json) );
+my @dlsite_data_array = @$data;
+my %dlc_hash;
+foreach(@dlsite_data_array){
+    my %data_hash = %$_;
+    $dlc_hash{$data_hash{'id'}} = $data_hash{'dl_count'};
+}
+
+
+
+my $command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+            " -X GET -H \"Content-Type:application/json\"" . 
+            " $server_url/subtasks?list_id=$list_id";
+my $respond = `$command`;
+exit if($respond =~ /\[\]/ );
+die "reflashWunderList: wunderList fail: respond = $respond" if($respond =~ /"id"/ eq '');
+$data = decode_json( $respond );
+
+my @wlist_data_array = @$data;
+my @id_array ;
+foreach(@wlist_data_array){
+    my %data_hash = %$_;
+    if($data_hash{'title'} =~ /(RJ[0-9]{6})/){
+        my @id_array = keys %dlc_hash;
+        if($1 ~~ @id_array){
+            my $dlc = $dlc_hash{$1};
+            #say "$dlc:$data_hash{'title'}" ;
+            $data_hash{'title'} =~ s/^[0-9]*\s*\|/$dlc |/;
+
+            my $task_id = $data_hash{'id'};
+            my %post_data = ( 
+                revision => $data_hash{'revision'}, 
+                title    => $data_hash{'title'},
+            );
+            my $post_data_json = encode_json(\%post_data);
+            $command =  "curl -s -H \"X-Access-Token: $token\"" . 
+                            " -H \"X-Client-ID: $client_id\"" . 
+                            " -X PATCH -H \"Content-Type:application/json\"" . 
+                            " -d '$post_data_json' $server_url/subtasks/$task_id";
+            #say $post_data_json;
+            my $respond = `$command`;
+            say "reflashWunderList: wunderList fail: respond = $respond" if($respond =~ /"id"/ eq '');
+       }
+   }
+}
+
+

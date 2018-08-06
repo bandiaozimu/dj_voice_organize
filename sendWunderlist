@@ -1,0 +1,142 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+use DBI;
+use Data::Dumper;
+use DJVoiceConfig;
+
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+my $token       = $DJVoiceConfig::WUNDERLIST_TOKEN;
+my $client_id   = $DJVoiceConfig::WUNDERLIST_CLIENT_ID;
+my $server_url  = $DJVoiceConfig::WUNDERLIST_API_URL;
+my $my_uid      = $DJVoiceConfig::WUNDERLIST_RECEIVER_UID;
+my $ren_uid     = $DJVoiceConfig::WUNDERLIST_SENDER_UID;
+
+my $json = '';
+my $return_value = 0;
+
+foreach my $line (<>){
+    chomp($line);
+    $line =~ s/^\s*//;
+    $json .= $line if(!($line =~ /^$/));
+}
+
+$json =~ s/'//g;
+
+if($json eq '[]'){
+    say 'no work to push';
+    exit 1;
+}
+#say $json;
+my $data = decode_json( encode('UTF-8', $json) );
+#$data = decode_json( '{"title":"perl test","sub_task":["sub1","sub2","sub3"],"note":"note http://asdfsdf","comment":"my comment"}' );
+my %data_hash = %$data;
+
+my $list_id      = $data_hash{'list_id'};
+my $title        = $data_hash{'title'};
+my $sub_task_ptr = $data_hash{'sub_task'};
+my $note         = $data_hash{'note'};
+my $comment      = $data_hash{'comment'};
+my @sub_task     = @$sub_task_ptr;
+
+#say $list_id      ;
+#say $title        ;
+#say $sub_task_ptr ;
+#say $note         ;
+#say $comment      ;
+#say @sub_task ;
+#say encode_json( \%data_hash );
+
+#----- title
+my %post_data = (
+    list_id            => $DJVoiceConfig::SENDER_INBOX_LIST_ID,  #list 'inbox' as a temp
+    title              => $title,
+#    assignee_id        => '',
+#    completed          => '',
+#    recurrence_type    => '',
+#    recurrence_count   => '',
+#    due_date           => '',
+#    starred            => '',
+);
+
+my $post_data_json = encode_json(\%post_data);
+my $command =   "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+                " -X POST -H \"Content-Type:application/json\"" . 
+                " -d '$post_data_json' $server_url/tasks";
+
+my $respond = `$command`;
+&check_respond('die');
+
+#$data = decode_json( $respond );
+$data = decode_json( encode('UTF-8', $respond) );
+my %data_hash = %$data;
+my $task_id = $data_hash{'id'};
+my $revision = $data_hash{'revision'};
+#say $task_id;
+
+#----- subtask
+foreach (@sub_task) {
+    %post_data = ( task_id => $task_id, title => $_ );
+    $post_data_json = encode_json(\%post_data);
+    $command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+                " -X POST -H \"Content-Type:application/json\"" . 
+                " -d '$post_data_json' $server_url/subtasks";
+    $respond = `$command`;
+    &check_respond('warn');
+    $revision++;
+}
+
+#----- note
+%post_data = ( task_id => $task_id, content => $note );
+$post_data_json = encode_json(\%post_data);
+$command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+            " -X POST -H \"Content-Type:application/json\"" . 
+            " -d '$post_data_json' $server_url/notes";
+$respond = `$command`;
+&check_respond('warn');
+$revision++;
+
+
+#----- move task to target list
+%post_data = ( revision => $revision, list_id => $list_id );
+$post_data_json = encode_json(\%post_data);
+$command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+            " -X PATCH -H \"Content-Type:application/json\"" . 
+            " -d '$post_data_json' $server_url/tasks/$task_id";
+$respond = `$command`;
+&check_respond('warn');
+$revision++;
+
+#----- send notification by add task comment
+%post_data = ( task_id => $task_id, text => $comment );
+$post_data_json = encode_json(\%post_data);
+$command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+            " -X POST -H \"Content-Type:application/json\"" . 
+            " -d '$post_data_json' $server_url/task_comments";
+$respond = `$command`;
+&check_respond('warn');
+$revision++;
+print $return_value;
+
+sub check_respond{
+    my $func_str = $_[0];
+    if($respond =~ /"id"/ eq ''){
+        $return_value = 1;
+        if($func_str eq 'die'){
+            die "sendWunderlist : add task error: $respond";
+        }else{
+            warn "sendWunderlist : add task error: $respond";
+        }
+    }
+}
+

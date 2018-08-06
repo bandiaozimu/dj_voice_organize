@@ -1,0 +1,200 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+use DBI;
+use Data::Dumper;
+use File::Copy;
+use File::Basename;
+use File::Find ();
+use File::chdir;
+use DJVoiceConfig;
+
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+my @suffix_list = ('.zip', '.rar', 'lzh');
+my $working_dir = $DJVoiceConfig::WORKING_DIR;
+
+our $target = $ARGV[0];
+$target .= '/' if( substr($target, -1) ne '/');
+
+#chdir $ARGV[0] or die 'chdir fail';
+$CWD = $ARGV[0];
+
+our @all_file;
+
+# for the convenience of &wanted calls, including -eval statements:
+use vars qw/*name *dir *prune/;
+*name   = *File::Find::name;
+*dir    = *File::Find::dir;
+*prune  = *File::Find::prune;
+
+sub wanted;
+
+# Traverse desired filesystems and get @all RJ##### files;
+
+File::Find::find({wanted => \&wanted}, $target);
+
+# clssify file, folder, double folder
+# and flating doble folder
+
+my %file_array;
+my @folder_array;
+
+#print Dumper(@all_file);
+
+foreach (@all_file ){
+
+    my $check = check_RJ_unify($_);
+    say $check, ':', $_;
+
+    if( $check ){
+        if( ! -d $_){ 
+            #say $check, ':file:', $_;
+            $file_array{ $_ } = $check;
+        }elsif(/\//){
+            #say $check, ':double folder:', $_;
+            &smart_move_in($_, '.');
+            s/.*\///g;
+            @folder_array = (@folder_array, $_);
+        }else{
+            #say $check, ':single folder:', $_;
+            @folder_array = (@folder_array, $_);
+        }
+    }
+}
+
+# move files into RJ###### named folder
+# mkdir if the folder doesn't exist
+
+while ( my($file, $folder) = each %file_array ){
+    if( ! -e $folder ){
+        mkdir "$folder", 0755 or warn "mkdir $folder fail: $!";
+        move "$file", "$folder";
+        say "mv $file $folder";
+        @folder_array = (@folder_array, $folder);
+    }else{
+        &smart_move_in($file, $folder);
+    }
+}
+
+# block empty folders
+# move empty folders into 'empty'
+
+our $is_empty_flag ;
+my $empty_folder;
+my @empty_index_array;
+
+foreach my $i (0..$#folder_array) {
+    $is_empty_flag = 1;
+    #say '-----' . $i, ':', $folder_array[$i];
+    File::Find::find(
+        {wanted => \&is_empty_folder}, $folder_array[$i] );
+    #say 'is_empty:' . $is_empty_flag;
+    if($is_empty_flag == 1){
+        @empty_index_array = (@empty_index_array, $i);
+        #$empty_folder = splice @folder_array, $i, 1;
+        #say "$folder_array[$i] is empty";
+    }
+}
+mkdir "empty", 0755 or warn "mkdir empty fail: $!" if ( $#empty_index_array != 0 );
+
+foreach (reverse @empty_index_array) {
+    say "move $_:$folder_array[$_] into empty"; 
+    $empty_folder = splice @folder_array, $_, 1;
+    &smart_move_in("$empty_folder", './empty');
+}
+
+# rename all folders with Complete DLSite name;
+mkdir "fail", 0755 if ( ! -e "./fail" );
+
+foreach my $folder (@folder_array) {
+    #say "calling rename with: " . $folder;
+    my $new_name ;
+    {
+        local $CWD = $working_dir;
+        $new_name = `./dlSiteRename '$folder'`;
+        #    say "new_name = $new_name";
+    }
+    if($new_name =~ /\[\]/){
+        &smart_move_in("$folder", './fail');
+    }else{
+        &smart_rename($folder, $new_name);
+    }
+}
+
+
+# ------------ sub rutine -------------
+sub is_empty_folder {
+    if( /mp3|wav|zip|rar|lzh/s ){
+        $is_empty_flag = 0;
+    }
+}
+
+sub wanted {
+    /^.*RJ.*\z/s
+    && save_addr($name);
+#    save_addr($name);
+}
+
+sub save_addr {
+    Encode::_utf8_on($_[0]);
+    # print $_[0] . "\n";
+    my $new_file = $_[0];
+
+    # $target is a global variable reprecent the root of working directory:
+
+    $new_file =~ s#$target## ;
+    @all_file = ( @all_file, $new_file );
+    1;
+}
+
+
+sub check_RJ_unify {
+    my @words = split /\//, $_[0];
+    foreach ( @words ){
+        $_ =~ s/.*(RJ[0-9]{6}).*/$1/;
+    }
+    my $i = 0;
+    my $keyword = $words[$#words];
+    foreach(  @words ){
+        $i++ if ($_ eq $keyword );
+    }
+    if( $i == 1 ){ $keyword; }
+    else { 0; }
+}
+
+sub smart_move_in {
+    my $file   = $_[0];
+    my $folder = $_[1];
+    my ($i, $dash) = 1, '';
+    my ($name, $path, $suffix) = fileparse($file, @suffix_list);
+    while ( -e "$folder/$name$dash$suffix" ){ $dash = sprintf "-%d", $i++; }
+    say "mv $file $folder/$name$dash$suffix";
+    move "$file", "$folder/$name$dash$suffix";
+}
+
+sub smart_rename {
+    my $file   = $_[0];
+    my $new_name = $_[1];
+    if( $file ne $new_name ){
+        my ($i, $dash) = 1, '';
+        my ($name, $path, $suffix) = fileparse($new_name, @suffix_list);
+        while ( -e "$new_name$dash$suffix" ){ $dash = sprintf "-%d", $i++; }
+        say "mv $file $new_name$dash$suffix";
+        rename "$file", "$new_name$dash$suffix";
+    }
+}
+
+
+
+#print Dumper(%file_array);
+#print Dumper(@folder_array);

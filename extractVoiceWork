@@ -1,0 +1,219 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+use DBI;
+use Data::Dumper;
+use Getopt::Std;
+use List::Util qw( min max );
+
+use DJVoiceConfig;
+
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+my $db      = $DJVoiceConfig::POP_DATABASE_PATH;
+
+my $i = 0;
+my @file_array;
+
+while(1){
+    @file_array = ();
+    foreach(`find copy \\( -name "*.rar" -o -name "*.zip" \\) `){
+        chomp;
+        push @file_array, $_;
+    }
+    last if($#file_array == -1);
+
+    print 'extracting .....';
+    system("find copy \\( -name '*.rar' -o -name '*.zip' \\) -exec open '{}' \\;");
+    while(! &test() ){ sleep(1); }
+}
+say 'done';
+
+
+#----- check duplicating dir
+my %dir_hash;
+my $duplicate_flag = 0;
+my $last_name;
+my %pass_dir_hash;
+foreach(`find copy/* -type d -mindepth 1 -maxdepth 1`){
+    chomp;
+    #===== pass target, tag_acc & tag_mp3 means the transcode has done before
+    if(/(tag_aac|tag_mp3)/){
+        
+        s/\/$1//;
+        say "pass : $_ has done before";
+        $pass_dir_hash{"$_"} = 1;
+        next;
+    }
+
+    #===== checking duplicate target 
+    my $dir_name = $_;
+    $dir_name =~ s/(RJ[0-9]{6}).*/$1/;
+    #say $dir_name;
+    if(++$dir_hash{$dir_name} == 2){
+        say "break: $last_name duplicated.";
+    }
+    if($dir_hash{$dir_name} > 1){
+        say "break: $_ duplicated.";
+        $duplicate_flag = 1;
+    }
+    $last_name = $_;
+}
+
+if($duplicate_flag){
+    say "***** leave only one folder for each RJ##### ID";
+    exit 1;
+}
+
+say 'duplicate check pass';
+my @dir_array;
+#===== pass tag_aac and tag_mp3 =====
+foreach(`find copy/* -type d -maxdepth 0`){
+    chomp;
+    push @dir_array, $_ if(!defined $pass_dir_hash{"$_"});
+#    say $_ if(!defined $pass_dir_hash{"$_"});
+}
+
+if($#dir_array == -1){
+    say "***** no work to import";
+    exit 1;
+}
+
+foreach(@dir_array){
+    #===== wav flac encode to aac with ffmpeg =====
+    my %name_hash = ();
+    my @m4a_array = ();
+    my @mp3_array = ();
+    my $dir = "$_/tag_aac";
+    foreach(`find "$_" -name "*.m4a"`){
+        chomp;
+        s/"/\"/g;
+        mkdir $dir if ( ! -e $dir );
+        my $filename = $_;
+        $filename =~ s/.*\///g;
+        $filename =~ s/\.\w+$//a;
+        $name_hash{"$filename"} = 1;
+        $filename = "$dir/$filename.m4a";
+        my $command = "mv \"$_\" \"$filename\"";
+        Encode::_utf8_on($command);
+        #say $command;
+        system($command);
+        push @m4a_array, $filename;
+    }
+    foreach(`find "$_" \\( -name "*.wav" -o -name "*.flac" \\)`){
+        chomp;
+        s/"/\"/g;
+        mkdir $dir if ( ! -e $dir );
+        my $filename = $_;
+        $filename =~ s/.*\///g;
+        $filename =~ s/\.\w+$//a;
+        if($name_hash{"$filename"} != 1){
+            $name_hash{"$filename"} = 1;
+            $filename = "$dir/$filename.m4a";
+            my $command = "ffmpeg -i \"$_\" " . 
+                "-c:a libfdk_aac -vbr 5 \"$filename\" >/dev/null";
+            Encode::_utf8_on($command);
+            #say $command;
+            system($command);
+            push @m4a_array, $filename;
+        }
+    }
+    my $dir = "$_/tag_mp3";
+    foreach(`find "$_" -name "*.mp3"`){
+        chomp;
+        s/"/\"/g;
+        my $filename = $_;
+        $filename =~ s/.*\///g;
+        $filename =~ s/\.\w+$//a;
+        if($name_hash{"$filename"} != 1){
+            mkdir $dir if ( ! -e $dir );
+            $filename = "$dir/$filename.mp3";
+            my $command = "mv \"$_\" \"$filename\"";
+            Encode::_utf8_on($command);
+            #say $command;
+            system($command);
+            push(@mp3_array, $filename ) ;
+        }
+    }
+
+    my $artwork = `find "$_" -maxdepth 1 -name '*.jpg' | head -n 1`;
+    $artwork = `find "$_" -name '*.jpg' | head -n 1` if($artwork eq '');
+    chomp($artwork);
+
+
+    $_ =~ s/"/\\"/g;
+    #$_ =~ m/\[(?<date>[0-9]+)\]/;
+    $_ =~   m/  \((?<genre>.*)\)\s*
+                \[(?<year>[0-9]{4})[0-9]{4}\]\s*
+                \[(?<circle>.*)\]\s*
+                (?<title>.*)\s*
+                (?<id>RJ[0-9]{6}) /x;
+    my $album       = $+{title};
+    my $albumArtist = $+{circle};
+    my $year        = $+{year};
+    my $genre       = $+{genre};
+    my $id          = $+{id};
+    say $album, $albumArtist, $year, $genre, $id;
+
+    my $json    = `sqlite3 $db 'SELECT vocal, tag, dl_count FROM voiceWork where id = "$id";'`;
+    $json =~ m/(?<vocal>.*)\|(?<tag>.*)\|(?<dl_count>.*)/;
+
+    my $artist      = $+{vocal};
+    my $comment     = $+{tag};
+    my $bpm         = max( min( 999, ($+{dl_count}) / 100 ), 1);
+
+    $bpm = sprintf( "%d", $bpm );
+    #say $bpm;
+
+    #say "$genre,$year,$albumArtist,$album,$id,$artist,$comment";
+    #say $artwork;
+    
+    foreach(@m4a_array){
+        my $command = "AtomicParsley \"$_\" ".
+            "--artwork \"$artwork\" ".
+            "--overWrite ".
+            "--album \"$album\" ".
+            "--albumArtist \"$albumArtist\" ".
+            "--artist \"$artist\" ".
+            "--comment \"$comment\" ".
+            "--year \"$year\" ".
+            "--bpm $bpm ".
+            "--genre \"$genre\" ";
+        system( $command );
+    }
+    foreach(@mp3_array){
+        system ( "eyeD3 --remove-all \"$_\"" );
+        my $command = "eyeD3 -2 ".
+            "-t \"\" ".
+            "-a \"$artist\" ".
+            "-A \"$album\" ".
+            "-b \"$albumArtist\" ".
+            "-G \"$genre\" ".
+            "-Y \"$year\" ".
+            "-c \"$comment\" ".
+            "--bpm $bpm ".
+            "--add-image \"$artwork:FRONT_COVER\" ".
+            "\"$_\"";
+            system( $command );
+    }
+}
+
+sub test{
+    my $file_flag = 1;
+    foreach(@file_array){
+        $file_flag = 0 if( -e $_ );
+    }
+    $file_flag;
+}
+
+
+

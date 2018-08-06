@@ -1,0 +1,82 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+use DBI;
+use Data::Dumper;
+use File::Copy;
+use File::Basename;
+use File::Find ();
+
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+my $target  = $ARGV[0];
+$target .= '/' if( substr($target, -1) ne '/');
+my $destDir = $ARGV[1];
+#global @all_file = ();
+
+# Set the variable $File::Find::dont_use_nlink if you're using AFS,
+# since AFS cheats.
+our @all_file;
+
+# for the convenience of &wanted calls, including -eval statements:
+use vars qw/*name *dir *prune/;
+*name   = *File::Find::name;
+*dir    = *File::Find::dir;
+*prune  = *File::Find::prune;
+
+sub wanted;
+
+# Traverse desired filesystems
+File::Find::find({wanted => \&wanted}, $target);
+
+sub wanted {
+#    /^.*RJ.*\z/s
+#    && save_addr($name);
+    save_addr($name);
+}
+
+sub save_addr {
+    Encode::_utf8_on($_[0]);
+    # print $_[0] . "\n";
+    @all_file = ( @all_file, $_[0] );
+    1;
+}
+
+#print Dumper(@all_file);
+shift @all_file;
+chdir $destDir or die 'chdir fail';
+mkdir "dummy", 0755 or warn "mkdir dummy fail: $!";
+
+say '----------- dir ------------';
+foreach (@all_file ){
+
+    if( -d $_){ 
+        my $new_file = $_;
+        $new_file =~ s#^.*$target#./dummy/# ;
+        say $new_file;
+        mkdir "$new_file", 0755 or warn "mkdir $new_file fail: $!";
+    }
+}
+
+
+say '----------- file ------------';
+foreach (@all_file ){
+
+    if( ! -d $_){ 
+        my $new_file = $_;
+        $new_file =~ s#^.*$target#./dummy/# ;
+        $new_file =~ s/"/\\"/g;
+        my $command = 'touch "'. $new_file .'"';
+        say $command;
+        system($command);
+    }
+}

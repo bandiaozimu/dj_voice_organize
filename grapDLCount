@@ -1,0 +1,98 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use Data::Dumper;
+use utf8;
+use Encode;
+use JSON;
+
+use DJVoiceConfig;
+
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+my $working_dir = $DJVoiceConfig::WORKING_DIR;
+
+if( $#ARGV == -1){
+    open URL, "$working_dir/createDLSiteUrl|" or die 'pipe fail';
+}else{
+    open URL, '-|', "$working_dir/createDLSiteUrl", "$ARGV[0]" or die 'pipe fail';
+
+}
+
+my @urls;
+my $i = 0;
+my %id_hash;
+foreach my $url (<URL>){
+    if($url =~ /http/){
+        chomp($url);
+        $urls[$i++] = $url;
+        $url =~ s/^.*keyword\///;
+        $url =~ s/\///;
+        my @id_array;
+        @id_array = split /\|/ ,$url;
+        foreach (@id_array){
+            $id_hash{$_}++;
+        }
+    }
+}
+
+close URL;
+
+#my %dl_count;
+my @result_array;
+
+foreach $i ( 0..$#urls ){
+    my $html_filename = "./data.$i.html";
+    system("curl -s -o $html_filename '$urls[$i]'") if( ! -e "$html_filename");
+    my $html = Web::Query->new_from_file("$html_filename");
+
+    $html->find('table.work_1col_table')->find('tr')->each(sub {
+
+            return unless defined $_->find('img')->attr('title');
+            my %result;
+
+            my $image = 'http:' . $_->find('div.work_img_main_popup')
+                ->find('img')->attr('data-original');
+            $result{'dl_count'} = $_->find('ul.work_info_box')->find('span')->text();
+
+            $result{'title'} = $_->find('img')->attr('title');
+            # **** title will block by updateDLSilteDB from update
+            $result{'text'} = $_->find('dd.work_text')->text();
+            $result{'image'} = $image;
+            #Encode::_utf8_on($result{'title'});
+            #Encode::_utf8_on($result{'text'});
+            $result{'title'}  = Encode::decode_utf8( $result{'title'});
+            $result{'text'}   = Encode::decode_utf8( $result{'text'});
+
+            my $id = $_->find('a')->attr('id');
+            $id =~ s/_link_//;
+
+            #my $id = $image;
+            #$id =~ s/.*\///g;
+            #$id =~ s/_.*$//;
+            $result{'id'} = $id;
+            @result_array = (@result_array, \%result);
+    });
+    system("rm $html_filename");
+}
+my @out_array;
+#print Dumper(%id_hash);
+foreach(@result_array){
+    if($id_hash{$_->{'id'}} > 0){
+        @out_array = (@out_array, $_);
+    }
+}
+
+my $out = encode_json(\@out_array);
+#Encode::_utf8_on( $out );
+$out   = Encode::decode_utf8( $out);
+say $out;
+
+# print Dumper(@array);
+

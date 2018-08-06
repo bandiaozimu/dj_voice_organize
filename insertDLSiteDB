@@ -1,0 +1,96 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+use DBI;
+use Data::Dumper;
+use DJVoiceConfig;
+
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+#----- check input -----
+if(! ($ARGV[0] =~ /(RJ[0-9]{6})/) ){
+    die 'need RJ###### in $ARGV[0]';
+}
+my $param = decode_json($ARGV[0]);
+my $id = $param->{'id'};
+my $working_dir = $DJVoiceConfig::WORKING_DIR;
+
+my $driver = "SQLite";
+my $database = $DJVoiceConfig::PUSH_DATABASE_PATH;
+my $dsn = "DBI:$driver:dbname=$database";
+my $userid = "";
+my $password = "";
+my $dbh = DBI->connect($dsn, $userid, $password, { RaiseError => 1 }) 
+                      or die $DBI::errstr;
+
+# print "Opened database successfully\n";
+
+my $stmt = "SELECT COUNT(id) FROM voiceWork WHERE id = '$id';";
+
+my $sth = $dbh->prepare( $stmt );
+my $rv = $sth->execute() or die $DBI::errstr;
+if($rv < 0){
+    print $DBI::errstr;
+}
+my @exist = $sth->fetchrow_array();
+
+
+if($exist[0]) { 
+
+    say "$id:insert DB duplicate";   
+    $stmt = "UPDATE voiceWork SET read = 1 WHERE id = '$id' AND CAST(read AS INT) = 0;";
+
+}else{
+
+    my @keywords = qw(id title circle_id date circle_name);
+    my $input_check = 1;
+    foreach (@keywords) {
+        #say $_ ,':', $param->{$_};
+        if(!$param->{$_}){
+            $input_check = 0;
+            last;
+        }
+    }
+
+    if(!$input_check){
+        #say "grapDLSite $id";
+        my $json_text = `$working_dir/grapDLSite $id`;
+        #say $json_text;
+        $param = decode_json( encode('UTF-8', $json_text) );
+    }
+
+    my $title           =  $param->{'title'  };   
+    my $circle_id       =  $param->{'circle_id' };   
+    my $circle_name     =  $param->{'circle_name' };   
+    my $image           =  $param->{'image'  };   
+    my $date            =  $param->{'date'   };   
+    my $tag             =  $param->{'tag'  };   
+    my $vocal           =  $param->{'vocal'  };   
+    #say "$id, $title, $circle_id, $date";
+
+    $title =~ s/'/''/g;
+
+    $stmt =  "INSERT INTO voiceWork "
+      . "(id, title, date, circle_id, circle_name, tag, vocal, read)" 
+      . "VALUES"
+      . "('$id', '$title', '$date', '$circle_id','$circle_name', '$tag', '$vocal', 1)";
+}
+
+$sth = $dbh->prepare( $stmt );
+$rv = $sth->execute() or die $DBI::errstr;
+if($rv < 0){
+    print $DBI::errstr;
+}
+
+$dbh->disconnect();
+
+

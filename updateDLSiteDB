@@ -1,0 +1,102 @@
+#! /usr/bin/perl
+
+# ============================================================================
+# updateDLSiteDB：根據讀入的JSON 檔更新資料庫，我都只有用來更新下載數和屬性標籤，
+#     reflashDLSiteDB 也是調用此腳本更新下載數和屬性標籤。
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+use DBI;
+use Data::Dumper;
+use DJVoiceConfig;
+no warnings 'experimental::smartmatch';
+
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+my $driver = "SQLite";
+my $database = $DJVoiceConfig::PUSH_DATABASE_PATH;
+my $dsn = "DBI:$driver:dbname=$database";
+my $userid = "";
+my $password = "";
+
+my @db_keys = ('id', 'dl_count', 'tag', 'vocal', 'read', 'last_dlcount');
+my $json = '';
+
+foreach my $line (<>){
+    chomp($line);
+    $line =~ s/^\s*//;
+    $json .= $line if(!($line =~ /^$/));
+}
+
+#say $json;
+my $data = decode_json( encode('UTF-8', $json) );
+#print Dumper($data);
+
+my @data_array = @$data;
+
+#say $data->[0]{'id'};
+#say $data->[0]{'dl_count'};
+#say $data_array[0]{'id'};
+my $dl_count_flag = 0;
+foreach(@data_array){
+    if(exists $_->{'id'}){
+        my $seq = 'UPDATE voiceWork SET ';
+        my $id = $_->{'id'} ;
+        while( my($key, $value) = each %$_ ){ 
+            if($key ~~ @db_keys){
+                $seq .= "$key = '$value'," if($key ne 'id');
+                $dl_count_flag = 1 if($key eq 'dl_count');
+            }
+        }
+        $seq  =~ s/,$// ;
+        $seq  .= " WHERE id = '$id';";
+        $_->{'seq'} = $seq;
+    }
+}
+
+my $dbh = DBI->connect($dsn, $userid, $password, { RaiseError => 1 }) 
+                      or die $DBI::errstr;
+
+print "Opened database successfully\n";
+
+foreach(@data_array){
+    my $id = $_->{'id'};
+
+#my $id = $data_array[0]{'id'};
+    my $stmt = "SELECT COUNT(id), last_dlcount FROM voiceWork WHERE id = '$id';";
+
+    my $sth = $dbh->prepare( $stmt );
+    my $rv = $sth->execute() or die $DBI::errstr;
+    if($rv < 0){ print $DBI::errstr; }
+    my @exist = $sth->fetchrow_array();
+
+    if($exist[0]) { 
+        $stmt = $_->{'seq'};
+#        say $stmt;
+        $sth = $dbh->prepare( $stmt );
+        $rv = $sth->execute() or die $DBI::errstr;
+        print $DBI::errstr if($rv < 0);
+        if($dl_count_flag && $exist[1] eq ''){
+            $stmt = "UPDATE voiceWork SET last_dlcount = dl_count WHERE id = '$id';";
+            #say "UPDATE voiceWork SET last_dlcount = dl_count WHERE id = '$id';";
+            $sth = $dbh->prepare( $stmt );
+            $rv = $sth->execute() or die $DBI::errstr;
+            print $DBI::errstr if($rv < 0);
+        }
+    }else{
+        say "$id doesn't exist"; 
+    }
+    $sth->finish();
+}
+
+$dbh->disconnect();
+
+

@@ -1,0 +1,61 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+use DBI;
+use Data::Dumper;
+use Getopt::Std;
+use List::Util qw( min max );
+
+use DJVoiceConfig;
+
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+my $database    = $DJVoiceConfig::POP_DATABASE_PATH;
+my $source      = 'copy';
+my $dest        = $DJVoiceConfig::ITUNES_PATH;
+
+my @dir_array;
+my @id_array;
+foreach(`find $source -type d \\( -name "tag_aac" -o -name "tag_mp3" \\)`){
+    chomp;
+    my ($dir) = /(RJ[0-9]{6})/;
+    push @id_array, $dir;
+    $dir = "$dest/$dir";
+    push @dir_array, $dir;
+    say "mv \"$_\" $dir";
+    system("mv \"$_\" $dir");
+}
+
+if($#id_array != -1){
+    my @file_array;
+    while(1){ 
+       @file_array = (); 
+        foreach(`find $dest -mindepth 2 \\( -name "*.mp3" -o -name "*.m4a" \\) `){
+            chomp;
+            push @file_array, $_;
+        }
+        last if($#file_array == -1);
+        sleep(1);
+    }
+
+    my $dir_string = join ' ', @dir_array;
+    say "rm -rf $dir_string";
+    system("rm -rf $dir_string") if($dir_string ne '');
+
+    my $id_string = "'" . join( "', '", @id_array) . "'";
+    my $query = "SELECT id, read FROM voiceWork WHERE id IN ($id_string);";
+    system("sqlite3 $database \"$query\" >done_id_and_read.list");
+    $query = "UPDATE voiceWork SET read = 8 WHERE id IN ($id_string) AND CAST(read AS int) < 8;";
+    say "sqlite3 $database \"$query\"";
+    system("sqlite3 $database \"$query\"");
+}
+

@@ -1,0 +1,392 @@
+#! /usr/bin/perl
+
+
+package DJVoiceConfig;
+
+use strict; use warnings;
+use Encode;
+
+use Exporter qw( import );
+#use Const::Fast;
+
+our @EXPORT = qw();
+our @EXPORT_OK = qw();
+
+# ==============================================================================================
+
+# 如果有建立 FlexGet 或任何爬蟲腳本，請在腳本中對資料庫表 JDownLoadVar 裡的 voiceWorkTrigger 設計邏輯，
+# 新增下載時將voiceWorkTrigger定為1，並將這 $USING_FLEXGET 定為1。
+#
+# 當 $USING_FLEXGET = 1 時，jdFinishEventHandler 會根據 voiceWorkTrigger 判斷是否要啟動本程式；
+#
+# 當 $USING_FLEXGET = 0 時，jdFinishEventHandler 會無條件啟動本程式，
+# 但無論 $USING_FLEXGET 為何，jdFinishEventHandler 只會在資料夾裡沒有 .part 檔時作動。
+# 
+# *****  看不懂？那就將這 $USING_FLEXGET 定為0。 ******
+#
+our $USING_FLEXGET              = 0;
+
+# ==============================================================================================
+
+# 各作品的狀態，儲存於資料庫表 voiceWork 欄位 read ，但我沒在腳本中用到這四個定義，都是直接給數
+our $DJVOICE_STATUS0_MISSING    = 0;
+our $DJVOICE_STATUS1_DOWNLOADED = 1;
+our $DJVOICE_STATUS2_PICKED     = 2;
+our $DJVOICE_STATUS4_RECOMMEND  = 4;
+our $DJVOICE_STATUS8_IMPORTED   = 8;
+
+# ==============================================================================================
+# 本程式的所在路徑，呼叫旗下任何腳本都必須將工作目錄定於此
+our $WORKING_DIR                = '/Users/hentai/git/dj_voice_organize';
+
+# 暫存目錄，我把保存的作品資料放在外接硬碟，而下載目錄則在本機硬碟
+# 這讓我在buildDLSite腳本搬移檔案時遇到麻煩，所以我在外接硬碟裡建一個暫存目錄，
+# 在運行buildDLSite前先將新作品移至此目錄，以保證buildDLSite處理的檔都在同個硬碟裡
+# 此目錄在程式運行完後也用來存放過程中產生的紀錄檔*.log，或出錯時的暫存檔*.json。
+our $CATCHE_DIR                 = '/Volumes/WD 8TB/hentai/catche';
+
+# jdFinishEventHandler 會檢查 $JDOWNLOADER_DOWNLOAD_DIR 下的檔案，有檔名符合「RJ######」就啟動本程式，
+# 程式起點為 buildVoiceWork.sh
+our $JDOWNLOADER_DOWNLOAD_DIR   = '/Users/hentai/git/dj_voice_organize/test/dummy';
+
+# JDOWNLOADER_WATCH_DIR 只有在我的爬蟲腳本用到，是JDownloader 接收 .crawljob 檔的地方
+our $JDOWNLOADER_WATCH_DIR      = '/Users/hentai/git/dj_voice_organize/test/watch';
+
+# 本程式支持主機／客戶端的配置方式，即主機運行 FlexGet，JDownloader，及保存作品資料；
+# 客戶端運行 atomicparsley，eyeD3，ffmpeg，iTunes。
+
+# $PUSH_** 開頭的路徑為主機端使用；$POP_** 開頭的路徑為客戶端使用，PUSH_*** 和POP_*** 雖然路徑可以不同，
+# 但仍必須指向同一個資料夾和資料庫
+our $PUSH_DATABASE_PATH         = $WORKING_DIR . '/DLSiteDB.db';
+our $PUSH_STORAGE_PATH          = "/Volumes/WD 8TB/hentai/hvoice";
+
+our $POP_STORAGE_PATH           = '/Volumes/WD 8TB/hentai/hvoice';
+our $POP_DATABASE_PATH          = '/Volumes/hentai/git/dj_voice_organize/DLSiteDB.db';
+
+# iTunes 的監控目錄
+our $ITUNES_PATH                = 
+    "/Users/hentai/Music/iTunes/iTunes\\ Media/Automatically\\ Add\\ to\\ iTunes.localized";
+
+# ==============================================================================================
+
+# 發送端要登入以下網址申請開發者帳號，並建立App：
+# https://developer.wunderlist.com/apps 
+# 
+# 建立App 時會要求填入app url 和callback url，隨便填即可。建好後可拿到client id，
+# 再點右下角的「CREATE ACCESS TOKEN」按鈕可得到一組access token
+our $WUNDERLIST_TOKEN           = 'c490####################################################72dc';
+our $WUNDERLIST_CLIENT_ID       = '7e################58';
+our $WUNDERLIST_API_URL         = 'https://a.wunderlist.com/api/v1';
+
+# 接收端的WunderList 帳號
+our $WUNDERLIST_RECEIVER_EMAIL  = 'xxxxxxx@xxxxx.com';
+
+# $WUNDERLIST_SENDER_UID 和 WUNDERLIST_RECEIVER_UID 目前腳本裡用不上，是我留著備用的，可以不填。
+our $WUNDERLIST_RECEIVER_UID    = 89999715; # mumumu
+our $WUNDERLIST_SENDER_UID      = 89999708; # NanaseRen
+
+# 請用指令 ./setup -w 自動更新以下清單(List) ID
+our $NEW_VOICEWORK_LIST_ID      = 359741286; # ダウンロード(下載) ID
+our $RECOMMEND_LIST_ID          = 359744700; # オススメ作品(推薦清單) ID
+our $SENDER_INBOX_LIST_ID       = 351021841; # 發送端的INBOX ID
+
+our $COLUMN_OF_RECOMMEND_LIST   = 5; # 推薦清單長度
+
+
+# ==============================================================================================
+
+# 推薦清單，腳本reflashRecommandList會根據 @RECOMMEND_CRITERIA_ARRAY 建立/更新 Wunderlist 裡的推薦清單，
+# 請用指令 ./setup -w 自動更新各待辦事項(Task)的task_id。
+#
+# -----------------------------------------------------
+# 這裏解釋query的寫法，基本的元素是：
+# 
+#          欄位[值]
+# ex:    title[事務的] 
+# 
+# 欄位是tag時可以省略：
+# 
+# ex:      [陵辱]
+# 
+# AND，OR，NOT分別為&，|，!：
+# 
+# ex:    ([ナース]|[メイド]|[風俗]|[ソープ])&![全年齢] 
+# 
+# SM 和 ASMR 的tag會混淆，所以加上空白區隔：
+# 
+# ex:     [ SM]|[SM ]
+#-------------------------------------------------------
+our @RECOMMEND_CRITERIA_ARRAY   = (
+    {
+        task_id => 4084626904,
+        title   => "事務的／強制／連続絶頂", 
+        query   => "(title[事務的]|([連続絶頂]&[無理矢理]&![陵辱]&![触手])|(([連続絶頂]|[淡白/あっさり]|[拘束]|([逆転無し]&[言葉責め]))&([手コキ]|[足コキ]|[パイズリ])))&![癒し]&![催眠]"
+    },
+    {
+        task_id => 4084626974,
+        title   => "複数プレイ／乱交ハーレム", 
+        query   => "([複数プレイ]&![陵辱]&![輪姦])|([ハーレム])"
+    },
+    {
+        task_id => 4084627031,
+        title   => "輪姦／痴漢／陵辱／触手", 
+        query   => "([痴漢]|[輪姦]|[陵辱]|[ホモ/男同士]|[触手])&![癒し]"
+    },
+    {
+        task_id => 4084627107,
+        title   => "エロい催眠", 
+        query   => "[催眠]&![全年齢]"
+    },
+    {
+        task_id => 4084627174,
+        title   => "SM／スパンキング／ムチ", 
+        query   => "([拷問]|[ SM]|[SM ]|[スパンキング]|[道具/異物]|[ムチ/縄/蝋燭]|[首輪/鎖/拘束具])&![癒し]"
+    },
+    {
+        task_id => 4084627266,
+        title   => "調教", 
+        query   => "[調教]&!([拷問]|[ SM]|[SM ]|[スパンキング]|[道具/異物]|[ムチ/縄/蝋燭]|[首輪/鎖/拘束具])&![癒し]"
+    },
+    {
+        task_id => 4084627334,
+        title   => "ラブラブ／中出し", 
+        query   => "([ラブラブ/あまあま]&[中出し])&!(([複数プレイ]&![陵辱]&![輪姦])|([ハーレム]))"
+    },
+    {
+        task_id => 4084627413,
+        title   => "全年齢", 
+        query   => "[全年齢]"
+    },
+    {
+        task_id => 4084627486,
+        title   => "ナース／メイド／ソープ", 
+        query   => "([ナース]|[メイド]|[風俗]|[ソープ])&![全年齢]"
+    },
+    {
+        task_id => 4084627568,
+        title   => "アナル／ふたなり／女装", 
+        query   => "([アナル]&[女王様/お姫様])|[性転換]|[ふたなり]|[女装]|title[去勢]"
+    }
+);
+
+my %the_else_genre = (
+    task_id =>  4084627639,
+    title   => "その他"
+);
+my @all_query;
+foreach(@RECOMMEND_CRITERIA_ARRAY){
+    my %hash = %$_;
+    my $query = $hash{query};
+    push @all_query, "($query)";
+}
+$the_else_genre{query} = '!(' . join('|',@all_query) . ')';
+push @RECOMMEND_CRITERIA_ARRAY, \%the_else_genre;
+
+# ==============================================================================================
+
+# 新作品的推播篩選，是根據發行社團，屬性標籤，聲優決定的。三者決定一個閥值，當下載數大於閥值則發
+# 送推播通知。
+# 計算閥值規則如下：
+#
+#        缺省值(DEFAULT) ------------\
+#        喜好的屬性標籤(PASS_TAG) ---取最小值----
+#        聲優(VOCAL) ----------------/           \
+#                                                 \
+#        討厭的屬性標籤(HOLD_TAG) -------------取最大值------
+#                                                            \
+#        發行社團(CIRCLE) ---------------------------------取最小值
+
+
+#        缺省值(DEFAULT) 
+our $NOTIFY_DEFAULT_THRESHOLD   = 1000;
+
+#        聲優(VOCAL) 
+our %NOTIFY_CRITERIA_HASH_VOCAL = (
+    "紗籐ましろ"       => 0, 
+    "/"                => 500, # 斜槓就是有多位聲優
+    "紗藤ましろ"       => 0,
+    "柚木朱莉"         => 0,
+    "沢野ぽぷら"       => 1000,
+    "分倍河原シホ"     => 0,
+    "みる☆くるみ"      => 0,
+    "彩瀬ゆり"         => 0,
+    "大山チロル"       => 0,
+    "野上菜月"         => 1000,
+    "桃華れん"         => 0,
+    "紅月ことね"       => 1000,
+    "陽向葵ゅか"       => 500,
+    "胡桃れみ"         => 0,
+    "鹿乃仔"           => 700,
+    "伊ヶ崎綾香"       => 0,
+    "かの仔"           => 0
+);
+
+#        討厭的屬性標籤(HOLD_TAG) 
+our %NOTIFY_CRITERIA_HASH_HOLD_TAG   = (
+    "全年齢"           => 1200 
+);
+
+#        喜好的屬性標籤(PASS_TAG) 
+our %NOTIFY_CRITERIA_HASH_PASS_TAG   = (
+
+    "緊縛"             => 0,   
+    "スパンキング"     => 0,   
+    "ムチ/縄/蝋燭"     => 150, 
+    "おもらし"         => 400, 
+    "監禁"             => 350, 
+    "首輪/鎖/拘束具"   => 300, 
+    "陵辱"             => 350, 
+    "奴隷"             => 400, 
+    "SM"               => 250, 
+    "拘束"             => 300, 
+    "調教"             => 1000,
+
+    "産卵"             => 0,   
+    "輪姦"             => 400, 
+    "女装"             => 290, 
+    "百合"             => 330, 
+    "レズ/女同士"      => 330, 
+    "性転換(TS)"       => 330, 
+    "女体化"           => 330, 
+
+    "風俗/ソープ"      => 340, 
+    "ナース"           => 400, 
+    "メイド"           => 1000,
+
+    "ハーレム"         => 300, 
+    "妊娠/孕ませ"      => 500, 
+    "複数プレイ/乱交"  => 300, 
+    "中出し"           => 1000,
+
+    "ふたなり"         => 330, 
+    "アナル"           => 500, 
+
+    "放尿/おしっこ"    => 600, 
+    "機械姦"           => 300, 
+    "露出"             => 500, 
+
+    "ASMR"             => 500, 
+    "バイノーラル"     => 1000,
+    "連続絶頂"         => 1000
+);
+
+#        發行社團(CIRCLE) 
+our %NOTIFY_CRITERIA_HASH_CIRCLE = (
+    "RG05824"          => 0,
+    "RG14008"          => 700,
+    "RG30964"          => 500,
+    "RG27505"          => 900,
+    "RG08821"          => 400,
+    "RG35258"          => 500,
+    "RG37155"          => 500,
+    "RG35513"          => 0,
+    "RG13573"          => 800,
+    "RG38033"          => 600,
+    "RG23954"          => 800,
+    "RG38817"          => 0,
+    "RG11548"          => 800,
+    "RG33577"          => 750,
+    "RG14450"          => 0,
+    "RG31089"          => 0,
+    "RG03821"          => 0,
+    "RG34647"          => 0,
+    "RG33363"          => 500,
+    "RG28991"          => 800,
+    "RG29061"          => 0,
+    "RG32840"          => 0,
+    "RG28716"          => 700,
+    "RG29957"          => 800,
+    "RG24357"          => 750,
+    "RG35279"          => 0,
+    "RG22664"          => 800,
+    "RG36674"          => 600,
+    "RG12190"          => 700,
+    "RG16419"          => 0,
+    "RG38233"          => 800,
+    "RG03913"          => 0,
+    "RG30771"          => 600,
+    "RG40751"          => 0,
+    "RG33662"          => 0,
+    "RG07939"          => 0,
+    "RG35984"          => 0,
+    "RG38313"          => 0,
+    "RG27215"          => 800,
+    "RG25950"          => 0,
+    "RG22197"          => 0,
+    "RG21413"          => 800,
+    "RG16088"          => 700,
+    "RG12547"          => 0,
+    "RG15095"          => 0,
+    "RG37739"          => 0,
+    "RG14653"          => 500,
+    "RG10740"          => 700,
+    "RG16540"          => 700,
+    "RG19615"          => 900,
+    "RG35407"          => 0,
+    "RG13399"          => 800,
+    "RG18195"          => 0,
+    "RG36994"          => 900,
+    "RG22839"          => 900,
+    "RG05893"          => 400,
+    "RG25562"          => 0,
+    "RG39648"          => 0,
+    "RG27430"          => 0,
+    "RG25917"          => 0,
+    "RG34004"          => 700,
+    "RG38687"          => 0,
+    "RG10971"          => 0,
+    "RG27440"          => 0,
+    "RG28138"          => 600,
+    "RG28613"          => 500,
+    "RG19162"          => 0,
+    "RG37253"          => 0,
+    "RG18912"          => 700,
+    "RG35604"          => 0,
+    "RG37624"          => 0,
+    "RG14403"          => 0,
+    "RG32896"          => 0,
+    "RG32722"          => 0,
+    "RG23133"          => 0,
+    "RG04303"          => 0,
+    "RG39694"          => 0,
+    "RG34152"          => 0,
+    "RG24285"          => 550,
+    "RG26627"          => 0,
+    "RG14177"          => 0,
+    "RG31794"          => 0,
+    "RG38012"          => 0,
+    "RG32858"          => 0,
+    "RG10851"          => 0,
+    "RG33365"          => 0,
+    "RG37782"          => 0,
+    "RG03223"          => 700,
+    "RG37313"          => 450,
+    "RG35667"          => 650,
+    "RG22409"          => 0,
+    "RG32988"          => 0,
+    "RG22970"          => 0,
+    "RG34734"          => 0,
+    "RG26359"          => 0,
+    "RG07987"          => 550,
+    "RG38030"          => 450,
+    "RG30985"          => 0,
+    "RG24788"          => 0,
+    "RG13156"          => 0,
+    "RG09303"          => 0,
+    "RG20507"          => 0,
+    "RG20050"          => 0,
+    "RG29022"          => 0,
+    "RG25316"          => 0,
+    "RG34854"          => 0,
+    "RG24555"          => 0,
+    "RG09985"          => 0,
+    "RG23739"          => 0,
+    "RG18493"          => 0,
+    "RG24350"          => 0,
+    "RG18283"          => 0,
+    "RG11428"          => 0,
+    "RG26811"          => 0 
+);
+
+__PACKAGE__;
+__END__

@@ -1,0 +1,19 @@
+# 檔案名稱 .gitignore
+
+.DS_Store
+.*.swp
+*.html
+*.log
+
+DJVoiceConfig.pm*
+!DJVoiceConfig.pm.sample
+
+DLSiteDB.db*
+!DLSiteDB.db.sample
+
+add_circle_name.sql
+copy
+grapMikocon
+grapMikocon.sh
+test
+done_id_and_read.list

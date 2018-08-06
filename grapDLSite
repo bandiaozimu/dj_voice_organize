@@ -1,0 +1,163 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+use Data::Dumper;
+
+use DJVoiceConfig;
+
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+#my $ARGV[0] = 'RJ128196';
+
+if(! ($ARGV[0] =~ /(RJ[0-9]{6})/) ){
+    die 'need RJ###### in $ARGV[0]';
+}
+my $target = $1;
+my $working_dir = $DJVoiceConfig::WORKING_DIR;
+my $file = "$working_dir/$target.html";
+
+my $dlsite = 'http://www.dlsite.com/maniax/work/=/product_id/';
+
+system("curl -s -o $file $dlsite$target.html") if( ! -e $file);
+my $html = Web::Query->new_from_file($file);
+#->find('div.head dt')
+#    ->find('.work_story')
+my $title = $html->find('div.base_title_br')->find('a')->text();
+my $discount = $html->find('span.icon_lead_01')->text();
+Encode::_utf8_on($title);
+Encode::_utf8_on($discount);
+$title =~ s/\W*$discount//;
+
+my %genre;
+$html->find('table')->filter(sub { return $_->attr('id') == 'work_outline'; })
+    ->find('span')->each(sub {
+        my $text = $_->text();
+        Encode::_utf8_on($text);
+        $genre{ $_->attr('class') } = $text;
+    });
+
+#print Dumper(@genre);
+my $main_genre;
+my $flag_adult = 0;
+while ( my($key, $value) = each %genre ){
+    $main_genre = '同人音声' if($key eq 'icon_SOU');
+    $main_genre = 'CG+ノベル' if($key eq 'icon_IN2');
+    $main_genre = '動画' if($key eq 'icon_MOV');
+    $flag_adult = 1 if ($key eq 'icon_ADL');
+}
+
+my %tag;
+$html->find('div.main_genre')->find('a')
+    ->each(sub {
+            $_ = $_->text();
+            Encode::_utf8_on($_);
+            $tag{$_}++;
+            #my $i = shift;
+            #printf("%d %s\n", $i+1, $_->text());
+            #printf("%d %s\n", $i+1, $_->as_html());
+    });
+$html->find('table.reviewer_most_genre')->find('span')
+    ->each(sub {
+            $_ = $_->text();
+            s/...\d+...//;
+            Encode::_utf8_on($_);
+            $tag{$_}++;
+    });
+$tag{'全年齢'}++ if(!$flag_adult);
+
+
+my $image = $html->find('meta')
+    ->filter(sub {
+            return $_->attr('name') =~ /twitter:image:src/;
+    })->attr('content');
+
+my %circle;
+$circle{'id'} = $html->find('span')
+    ->filter(sub {
+            return $_->attr('class') =~ /maker_name/;
+    })->find('a')->attr('href');
+$circle{'id'} =~ s/^.*maker_id\///;
+$circle{'id'} =~ s/\.html//;
+
+$circle{'name'} = $html->find('span')
+    ->filter(sub {
+            return $_->attr('class') =~ /maker_name/;
+    })->find('a')->text();
+Encode::_utf8_on( $circle{'name'} );
+
+my $date = $html->find('table')
+    ->filter(sub {
+            return $_->attr('id') =~ /work_outline/;
+    })->find('a')->filter(sub {
+            return $_->attr('href') =~ /year/;
+    })->attr('href');
+$date =~ s/^.*\/year\///;
+$date =~ s/\/cyear.*$//;
+$date =~ s/\/mon\/|\/day\//-/g;
+
+#my $i = 1;
+my %vocal;
+my $vocal_str;
+my $has_vocal_tag = 0;
+$html->find('table')->filter(sub { return $_->attr('id') == 'work_outline'; })
+    ->find('tr')->filter(sub {
+        $_ = $_->find('th')->text();
+        Encode::_utf8_on($_);
+        if(/声優/){
+            $has_vocal_tag = 1;
+            return 1;
+        }
+        return 0;
+    })->find('td')->each(sub{
+        $_ = $_->text();
+        Encode::_utf8_on($_);
+#        s/\s//;
+#        s/\// /;
+        $vocal_str = $_;
+    });
+
+#my $content = $html->find('div.work_article')
+if(!$has_vocal_tag){
+    $html->find('div.work_article')
+        ->filter(sub {
+                return 1 if $_->has_class('work_story');
+                return 0;
+        })->each(sub {
+                $_ = $_->text();
+                Encode::_utf8_on($_);
+                if(/(ボイス)|(VOICE)|(voice)|(CV)|(声優)|(キャスト)/){
+                    s/^.*$+\W+//s;
+                    s/\s.*$//s;
+                    s/様$|http.*$//;
+                    s/\W+$//;
+                    $vocal{$_}++;
+                }
+        });
+    $vocal_str = join ('/', keys(%vocal));
+}
+
+my %output = (
+    'id'            =>    $target,
+    'title'         =>    $title,
+    'circle_id'     =>    $circle{'id'},
+    'circle_name'   =>    $circle{'name'},
+    'image'         =>    $image,
+    'date'          =>    $date,
+    'tag'           =>    join (' ', keys(%tag)),
+    'vocal'         =>    $vocal_str,
+    'genre'         =>    $main_genre,
+);
+#say $content;
+my $outputUtf8 = encode_json \%output;
+Encode::_utf8_on($outputUtf8);
+print $outputUtf8;
+
+

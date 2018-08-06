@@ -1,0 +1,221 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use Data::Dumper;
+use utf8;
+use Encode;
+use JSON;
+use DBI;
+use DateTime;
+
+use DJVoiceConfig;
+
+use Getopt::Std;
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+
+my $select_list_json_file = $ARGV[0];
+my $driver = "SQLite";
+my $working_dir = $DJVoiceConfig::WORKING_DIR;
+my $database = $DJVoiceConfig::PUSH_DATABASE_PATH;
+my $dsn = "DBI:$driver:dbname=$database";
+my $userid = "";
+my $password = "";
+
+my $dbh = DBI->connect($dsn, $userid, $password, { RaiseError => 1 }) 
+                      or die $DBI::errstr;
+
+print "Opened database successfully\n";
+
+#---- fetch last-reflash time
+
+my $stmt = "SELECT value FROM dlSiteVariable WHERE name = 'date_ptrs';" ;
+my $sth = $dbh->prepare( $stmt );
+my $rv = $sth->execute() or die $DBI::errstr;
+print $DBI::errstr if($rv < 0);
+my @row = $sth->fetchrow_array();
+my $json = $row[0];
+#say $json;
+
+#my $json = '{"ptrs":["2018-05-23", "2018-04-23", "2018-01-23", "2017-01-23"],"max_of_item_per_day":8}';
+my $hash_ptr = decode_json($json);
+my $ptrs_ptr = $hash_ptr->{ptrs};
+my $max_of_item_per_day = $hash_ptr->{max_of_item_per_day};
+my @ptrs = @$ptrs_ptr;
+
+#---- create reflash list
+
+my @begin_ptrs  = ( '-0',        '-1',         '-4',         '-16' );
+my @end_ptrs    = ( '-1',        '-4',         '-16',        '-64' );
+my @limits      = ( 50,          25,           15,           10    );
+
+my @result;
+my @id_array ;
+my @date_array;
+my %last_dlcount;
+my %dlcount_before_grap;
+my $rewind_flag = 0;
+
+for ( my $j = 0; $j < 4; $j++ ) {
+    #say "---$j";
+    my $start_date  = $ptrs[        $j ];
+    my $end_intval  = $end_ptrs[    $j ];
+    my $begin_ptr   = $begin_ptrs[  $j ];
+    my $fetch_limit = $limits[      $j ];
+
+    $stmt = "SELECT id, date, last_dlcount, dl_count FROM voiceWork WHERE " . 
+                "date <= date('$start_date') " .
+                "AND date > date('now', '$end_intval month') " .
+                "AND CAST(read AS int) > 0 " . 
+                "ORDER BY date DESC " .
+                "LIMIT $fetch_limit + $max_of_item_per_day;";
+
+    $sth = $dbh->prepare( $stmt );
+    $rv = $sth->execute() or die $DBI::errstr;
+    print $DBI::errstr if($rv < 0);
+
+    my $i = 0;
+    while(@row = $sth->fetchrow_array()) {
+        $i++;
+        @id_array   = ( @id_array   , $row[0] );
+        @date_array = ( @date_array , $row[1] );
+        $last_dlcount{$row[0]}           = $row[2];
+
+        $row[3] = 0 if($row[3] eq '');
+        $dlcount_before_grap{$row[0]}    = $row[3];
+        #print "$i:id = ". $row[0] . ",", "date = ". $row[1] ."\n";
+    }
+
+    if( $i < ($fetch_limit + $max_of_item_per_day) && !$rewind_flag){
+        $rewind_flag = 1;
+        $limits[ $j ] -= $i;
+        $ptrs[   $j ] =  DateTime->today->add(months => $begin_ptr)->strftime('%Y-%m-%d');
+        $j--;
+        next;
+        #say 'rewind';
+    }
+
+    if(@date_array){
+        my $redundant_index = $#date_array;
+        my $redundant_date = $date_array[$redundant_index];
+
+        while( $redundant_date eq $date_array[$redundant_index] ){ $redundant_index--;}
+        if( $redundant_index < 0){
+            # can't find the next date, all the date in date_array are the same
+            $redundant_index = $#date_array;
+            $max_of_item_per_day++ if(@date_array >= $limits[ $j ] + $max_of_item_per_day);
+            # ^^^^^ because too many works publish in this day, expand limit next time
+            # ^^^^^ this should not happen
+        }
+
+        @result = (@result, splice(@id_array, 0, $redundant_index + 1));
+        $ptrs[ $j ] = $date_array[$#date_array];
+    }
+
+    say "new date = $ptrs[ $j ]";
+    (@id_array, @date_array) = ();
+    $rewind_flag = 0;
+}
+
+#----- create list file
+my %result_hash;
+foreach( @result ){ $result_hash{$_}++; }
+my @unique_result = keys %result_hash;
+open LIST, ">:encoding(UTF-8)", "update_list";
+foreach( @unique_result ){
+    print LIST "$_\n";
+}
+close LIST;
+
+#---- grap DL count &  update dlSite DB
+my $command = "$working_dir/grapDLCount update_list ". 
+    "| tee $select_list_json_file | " . "$working_dir/updateDLSiteDB";
+system($command);
+system("rm update_list");
+
+#---- update last-reflash time
+$hash_ptr->{ptrs} = \@ptrs;
+$hash_ptr->{max_of_item_per_day} = $max_of_item_per_day;
+$json = encode_json( $hash_ptr );
+#say $json;
+$stmt = "UPDATE dlSiteVariable SET value = '$json' WHERE name = 'date_ptrs';" ;
+$sth = $dbh->prepare( $stmt );
+# say $stmt;
+$rv = $sth->execute() or die $DBI::errstr;
+print $DBI::errstr if($rv < 0);
+
+#----- reflash tags if diff of dl_count > 200
+$json = '';
+
+open JSONF, "<:encoding(UTF-8)", $select_list_json_file;
+foreach my $line (<JSONF>){
+    chomp($line);
+    $line =~ s/^\s*//;
+    $json .= $line if(!($line =~ /^$/));
+}
+close JSONF;
+
+#say $json;
+my $data = decode_json( encode('UTF-8', $json) );
+#print Dumper($data);
+
+my @data_array = @$data;
+my @refine_array;   # refine json file : add 'dlcount_before_grap'
+
+@result = ();  # make updata_tag for reflash tag
+foreach(@data_array){
+    my %hash = %$_;
+    my $id = $hash{'id'};
+    #say $last_dlcount{$id},':', $hash{'dl_count'};
+    #say $last_dlcount{$id},':', $hash{'dl_count'};
+    if(defined $dlcount_before_grap{$id} ) {
+        $hash{'dlcount_before_grap'} = $dlcount_before_grap{$id};
+        @refine_array = (@refine_array, \%hash);
+    }
+
+    if( (defined $last_dlcount{$id}) && 
+        ($hash{'dl_count'} - $last_dlcount{$id} > 200 ) )
+    {
+        #system("rm $id.html") if( -e "$id.html" );
+        say "update tag: $id";
+        $command = "$working_dir/grapDLSite $id";
+        $json = `$command`;
+        
+        my $param = decode_json(encode('UTF-8', $json));
+        my %result_hash = (
+            id              => $id,
+            tag             => $param->{'tag'},
+            last_dlcount    => $hash{'dl_count'},
+        );
+        @result = (@result, \%result_hash);
+    }
+}
+
+$json = encode_json(\@refine_array);
+Encode::_utf8_on( $json );
+open JSONF, ">", $select_list_json_file;
+print JSONF "$json";
+close JSONF;
+
+if($#result != -1){
+    $json = encode_json(\@result);
+    Encode::_utf8_on( $json );
+    open JSONF2, ">", "updata_tag.json";
+    print JSONF2 "$json";
+    close JSONF2;
+    $command = "$working_dir/updateDLSiteDB updata_tag.json";
+    system($command);
+    system('rm updata_tag.json');
+}
+
+
+#print Dumper(@result);
+#print Dumper(@exist);
+#say "value = $exist[0]";
+

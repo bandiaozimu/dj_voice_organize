@@ -1,0 +1,88 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use JSON;
+use Encode;
+use Data::Dumper;
+use DBI;
+use File::Find ();
+use DJVoiceConfig;
+
+my $working_dir = $DJVoiceConfig::WORKING_DIR;
+my $jd_download_dir = $DJVoiceConfig::JDOWNLOADER_DOWNLOAD_DIR;
+my $driver = "SQLite";
+my $database = $DJVoiceConfig::PUSH_DATABASE_PATH;
+my $dsn = "DBI:$driver:dbname=$database";
+my $userid = "";
+my $password = "";
+
+my $dbh = DBI->connect($dsn, $userid, $password, { RaiseError => 1 }) 
+                      or die $DBI::errstr;
+
+print "Opened database successfully\n";
+
+#---- fetch last-reflash time
+
+my $stmt = "SELECT value FROM JDownLoadVar WHERE name = 'voiceWorkTrigger';" ;
+my $sth = $dbh->prepare( $stmt );
+my $rv = $sth->execute() or die $DBI::errstr;
+print $DBI::errstr if($rv < 0);
+my @row = $sth->fetchrow_array();
+$sth->finish();
+my $voiceWorkTrigger = $row[0];
+
+#----- find *.part
+use vars qw/*name *dir *prune/;
+*name   = *File::Find::name;
+*dir    = *File::Find::dir;
+*prune  = *File::Find::prune;
+
+our $part_file_exist = 0;
+our $rj_file_exist = 0;
+sub wanted;
+
+#==============#
+#   voiceWork  #
+#==============#
+if($voiceWorkTrigger | (!$DJVoiceConfig::USING_FLEXGET)){
+    # Traverse desired filesystems
+    File::Find::find({wanted => \&is_RJ}, $jd_download_dir);
+    if(!$rj_file_exist){
+        say 'there is no RJ###### file';
+        exit;
+    }
+    File::Find::find({wanted => \&wanted}, $jd_download_dir);
+    if(!$part_file_exist){
+        say 'start building voiceWork';
+        if($DJVoiceConfig::USING_FLEXGET){
+            $stmt = "UPDATE JDownLoadVar SET value = 0 WHERE name = 'voiceWorkTrigger';" ;
+            $sth = $dbh->prepare( $stmt );
+            $rv = $sth->execute() or die $DBI::errstr;
+            $sth->finish();
+            print $DBI::errstr if($rv < 0);
+        }
+        system("find $jd_download_dir >>$working_dir/voice_work.log");
+        system("$working_dir/buildVoiceWork.sh >>$working_dir/voice_work.log");
+
+    }else{
+        say '.part exist';
+    }
+}else{
+    say "didn't trigger!";
+}
+
+sub wanted {
+    if(/RJ[0-9]{6}/){
+        if(/^.*\.part\z/s){
+            $part_file_exist = 1;
+        }
+    }
+}
+
+sub is_RJ {
+    if(/RJ[0-9]{6}/){
+        $rj_file_exist = 1;
+    }
+}

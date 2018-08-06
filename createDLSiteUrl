@@ -1,0 +1,26 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+
+my @urls;
+my ($i, $j) = (0, 0);
+foreach(<>){
+    if( my ($id) = /(RJ[0-9]{6})/ ) {
+        ($i, $j) = ( 1 , $j+1 ) if( $i++ >= 27) ;
+        $urls[$j] .= $id . '|';
+    }
+}
+
+foreach my $url ( @urls ) {
+    substr($url, -1, 1) = '';
+    say "http://www.dlsite.com/maniax/fsr/=/language/jp/sex_category%5B0%5D/male/keyword/$url/";
+    say '';
+}
+
+

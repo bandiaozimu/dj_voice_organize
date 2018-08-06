@@ -1,0 +1,170 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+use Web::Query;
+use JSON;
+use Encode;
+use Data::Dumper;
+use DBI;
+use List::Util qw( min max );
+
+use DJVoiceConfig;
+
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+my $out_file = shift (@ARGV);
+
+my %pass_tag_hash       = %DJVoiceConfig::NOTIFY_CRITERIA_HASH_PASS_TAG;
+my %hold_tag_hash       = %DJVoiceConfig::NOTIFY_CRITERIA_HASH_HOLD_TAG;
+my %vocal_hash          = %DJVoiceConfig::NOTIFY_CRITERIA_HASH_VOCAL;
+my %circle_hash         = %DJVoiceConfig::NOTIFY_CRITERIA_HASH_CIRCLE;
+my $default_threshold   = $DJVoiceConfig::NOTIFY_DEFAULT_THRESHOLD;
+
+my $json;
+my @voice_work_array;
+while (<>) {
+    $json .= $_;
+    if (eof(ARGV)){
+        my $tmp = decode_json( encode('UTF-8', $json) );
+        push @voice_work_array, @$tmp;
+        $json = '';
+    }  # check for end of last file
+    last if eof();     # needed if we're reading from a terminal
+}
+
+my $driver = "SQLite";
+my $database = $DJVoiceConfig::PUSH_DATABASE_PATH;
+my $dsn = "DBI:$driver:dbname=$database";
+my $userid = "";
+my $password = "";
+
+my $dbh = DBI->connect($dsn, $userid, $password, { RaiseError => 1 }) 
+                      or die $DBI::errstr;
+#print "Opened database successfully\n";
+my @passed_array;
+my @comment;
+foreach(@voice_work_array){
+    $_->{'dlcount_before_grap'} = 0 if(!defined $_->{'dlcount_before_grap'}) ;
+    my $id = $_->{'id'};
+
+    my $stmt = "SELECT vocal, tag, circle_id, last_threshold, read FROM voiceWork WHERE id = '$id';";
+    my $sth = $dbh->prepare( $stmt );
+    my $rv = $sth->execute() or die $DBI::errstr;
+    print $DBI::errstr if($rv < 0);
+    my ($vocal, $pass_tag, $circle_id, $last_threshold, $read) = $sth->fetchrow_array();
+    my $hold_tag = $pass_tag;
+    my $save_vocal = $vocal;
+
+    Encode::_utf8_on( $vocal );
+    Encode::_utf8_on( $save_vocal );
+    Encode::_utf8_on( $pass_tag );
+    Encode::_utf8_on( $hold_tag );
+    Encode::_utf8_on( $circle_id );
+
+    my $threshold = $default_threshold;
+    $threshold = &cirteria_threshold(\&min, $threshold,  $vocal,     %vocal_hash);
+    $threshold = &cirteria_threshold(\&min, $threshold,  $pass_tag,  %pass_tag_hash);
+    $threshold = &cirteria_threshold(\&max, $threshold,  $hold_tag,  %hold_tag_hash);
+
+    #====== circle threshold is the first priority
+    $threshold = &cirteria_threshold(\&min, $threshold,  $circle_id, %circle_hash);
+
+    my $pass = 1;
+    $pass = 0 if($_->{'dlcount_before_grap'} == $_->{'dl_count'} ); # dlcount didn't change then TH won't change
+    $pass = 0 if($_->{'dl_count'} < $threshold);
+    $pass = 0 if($_->{'dlcount_before_grap'} >= $last_threshold );
+
+    $vocal = $save_vocal if ($vocal =~ /\//);
+    my $tag = "$pass_tag $hold_tag";
+    if($pass && $read == 1) {
+        @comment = ();
+        print 'pass ';
+        if($circle_id ne ''){
+            my $rank = ($default_threshold - $circle_hash{"$circle_id"}) / 300;
+            $rank = "\x{2605}"x$rank; # star * / ** / *** for rank 1 / 2 / 3
+            $rank = encode('UTF-8', $rank);
+            Encode::_utf8_on( $rank );
+            push @comment , $rank if($rank ne '');
+        }
+        push @comment , 'CV:'  . $vocal  if($vocal ne '');
+        push @comment , 'TAG:' . $tag    if($tag   ne '');
+
+        $_->{'tag'} = join '| ', @comment;
+        push @passed_array, $_;
+    }else {
+        print 'fail ';
+    }
+    #print Dumper($_);
+    if($threshold != $last_threshold){
+        $stmt = "UPDATE voiceWork SET last_threshold = $threshold WHERE id = '$id';";
+        $rv = $dbh->do($stmt) or die $DBI::errstr;
+        print $DBI::errstr if($rv < 0);
+        printf "%s| %d |%5d -> %5d :%5d <- %6d | %s, %s, %s\n", $id, $read, $_->{'dlcount_before_grap'},
+            $_->{'dl_count'},$threshold, $last_threshold, $vocal, $tag, $circle_id ;
+    }else{
+        printf "%s| %d |%5d -> %5d :%5d    %6s | %s, %s, %s\n", $id, $read, $_->{'dlcount_before_grap'},
+            $_->{'dl_count'},$threshold, '', $vocal, $tag, $circle_id ;
+    }
+
+}
+
+$dbh->disconnect();
+
+open JSONF, ">", $out_file;
+
+$json = encode_json(\@passed_array);
+Encode::_utf8_on( $json );
+print JSONF "$json";
+close JSONF;
+
+sub cirteria_threshold{
+    (my $ref_to_cmp_func, my $threshold, my $target_string, my %key_hash)  = @_;
+    Encode::_utf8_on( $target_string );
+    #say $target_string;
+    my @result_array;
+    while( (my $key, my $dl_count) = each %key_hash){
+        my $keyword = $key;
+        Encode::_utf8_on( $key );
+        Encode::_utf8_on( $keyword );
+        $keyword =~ s/\(.*\)//g;
+        if($target_string =~ /(^| |\/)$keyword/){
+            push @result_array , $key;
+            $threshold = $ref_to_cmp_func->($dl_count , $threshold);
+        }
+        #say "$keyword = $dl_count";
+    }
+#    print Dumper(%key_hash);
+    @_[2] = join ' ', @result_array;
+#    say "@_[0], $threshold";
+    return $threshold;
+}
+
+
+# sub cirteria_threshold{
+#     my $threshold = $default_threshold;
+#     (my $target_string, my %key_hash)  = @_;
+#     Encode::_utf8_on( $target_string );
+#     #say $target_string;
+#     my @result_array;
+#     while( (my $key, my $dl_count) = each %key_hash){
+#         my $keyword = $key;
+#         Encode::_utf8_on( $key );
+#         Encode::_utf8_on( $keyword );
+#         $keyword =~ s/\(.*\)//g;
+#         if($target_string =~ /(^| |\/)$keyword/){
+#             push @result_array , $key;
+#             $threshold = $dl_count if ($dl_count < $threshold);
+#         }
+#         #say "$keyword = $dl_count";
+#     }
+# #    print Dumper(%key_hash);
+#     @_[0] = join ' ', @result_array;
+# #    say "@_[0], $threshold";
+#     return $threshold;
+# }
+
+

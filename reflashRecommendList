@@ -1,0 +1,272 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+use DBI;
+use Data::Dumper;
+use Getopt::Std;
+
+use DJVoiceConfig;
+
+no warnings 'experimental::smartmatch';
+
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+my $db          = $DJVoiceConfig::POP_DATABASE_PATH;
+my $token       = $DJVoiceConfig::WUNDERLIST_TOKEN;
+my $client_id   = $DJVoiceConfig::WUNDERLIST_CLIENT_ID;
+my $server_url  = $DJVoiceConfig::WUNDERLIST_API_URL;
+my $my_uid      = $DJVoiceConfig::WUNDERLIST_RECEIVER_UID;
+my $ren_uid     = $DJVoiceConfig::WUNDERLIST_SENDER_UID;
+my $list_id     = $DJVoiceConfig::RECOMMEND_LIST_ID;
+
+my $return_value = 0;
+
+#===== reading list : RJ######|[1|2|4|8]
+my $done_list_file = './done_id_and_read.list';
+
+#my $done_list_file = $ARGV[0];
+my @done_id_array =();
+if( -e $done_list_file ){
+    open DONE_LIST, "<", $done_list_file;
+    foreach(<DONE_LIST>){
+        $_ =~ /(?<id>RJ[0-9]{6})\|(?<read>\d*)/;
+        my $id = $+{id};
+        my $read = $+{read};
+        push @done_id_array, $id if($read == 4);
+    }
+    close DONE_LIST;
+    exit if(@done_id_array == 0);
+}
+#say join ' ', @done_id_array;
+
+#===== grap from wunderlist 
+my $command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+            " -X GET -H \"Content-Type:application/json\"" . 
+            " $server_url/subtasks?list_id=$list_id";
+my $respond = `$command`;
+my $data = decode_json( encode('UTF-8', $respond) );
+my @origin_respond_array = @$data;
+#&check_respond('die');
+#say $respond;
+
+#===== delete complete subtask ( real complete by itunes ) get ** task_id:space ** as return
+#===== create *** %id_string_hash  *** with $respond from ****CURL GET 
+#===== create *** %subtask_id_string_hash *** with $respond from ****CURL GET 
+
+my %id_string_hash;
+my %subtask_count_hash;
+my %subtask_id_string_hash;
+foreach(@origin_respond_array){
+    my %data_hash = %$_;
+    my $title       = $data_hash{'title'};
+    my $task_id     = $data_hash{'task_id'};
+    my $subtask_id  = $data_hash{'id'};
+    $title = $+{id} if $data_hash{'title'} =~ /(?<id>RJ[0-9]{6})/;
+    if($title ~~ @done_id_array){
+        my $revision = $data_hash{revision};
+        #say "$title, task_id = $task_id,rev =  $revision";
+        $command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+                    " -X DELETE -H \"Content-Type:application/json\"" . 
+                    " $server_url/subtasks/$subtask_id?revision=$revision";
+        $respond = `$command`;
+        #&check_respond('warn');
+    }else{
+        $id_string_hash{$task_id} .= "$title\n";
+        $subtask_count_hash{$task_id}++;
+    }
+}
+ 
+my @table_array = @DJVoiceConfig::RECOMMEND_CRITERIA_ARRAY;
+my $space_flag = 0;
+my %genre_hash;
+my %space_hash;
+foreach(@table_array){
+    my %hash = %$_;
+    my $task_id = $hash{task_id};
+    my $count = $subtask_count_hash{$task_id} // 0;
+    $space_hash{$task_id} = $DJVoiceConfig::COLUMN_OF_RECOMMEND_LIST - $count;
+    $space_flag |= 1 if($space_hash{$task_id} != 0);
+
+    $genre_hash{$task_id} = $hash{title};
+    Encode::_utf8_on($genre_hash{$task_id});
+}
+# while(my($task_id, $count) = each %subtask_count_hash){
+#     my $space = $space_hash{$task_id} -= $count;
+#     $space_flag |= 1 if($space != 0);
+#     Encode::_utf8_on($genre_hash{$task_id});
+#     #say "$task_id $genre_hash{$task_id} : $space";
+# }
+
+#----- exit if there is no space
+if($space_flag == 0){
+    exit;
+}else{
+    say "reflash Recommand list:";
+}
+
+#===== fetch position of all subtask in list
+my $command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+            " -X GET -H \"Content-Type:application/json\"" . 
+            " $server_url/subtask_positions?list_id=$list_id";
+my $respond = `$command`;
+my $data = decode_json( encode('UTF-8', $respond) );
+my @subtask_position_array = @$data;
+
+#===== fetch note of all task in list
+my $command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+            " -X GET -H \"Content-Type:application/json\"" . 
+            " $server_url/notes?list_id=$list_id";
+my $respond = `$command`;
+my $data = decode_json( encode('UTF-8', $respond) );
+my @note_array = @$data;
+
+while(my($task_id, $space) = each %space_hash){
+    next if ($space == 0);
+    #say "$task_id => $space";
+    #===== get new suggesting new voiceWorks as **** $id_string =====
+#    my $task_id = 3962550424;
+    $task_id += 0;
+    my $current_id_string = $id_string_hash{$task_id};
+    $current_id_string =~ s/\n/ /g;
+    my $id_string = `./voiceWorkSelection $task_id $space $current_id_string`;
+    # say $id_string;
+    
+    if($id_string eq ''){
+        say "$genre_hash{$task_id} : no new Work";
+        next;
+    }
+    #===== collect subtask for current task in @origin_respond_array
+    my @current_task_array = grep { $_->{task_id} eq $task_id }@origin_respond_array;
+
+    #===== find current position
+    my ($current_position) = grep { $_->{task_id} eq $task_id }@subtask_position_array;
+    my $pos_revision = $current_position->{revision};
+
+    #===== find current note
+    my ($current_note) = grep { $_->{task_id} eq $task_id }@note_array;
+    my $note_revision = $current_note->{revision};;
+    my $note_id = $current_note->{id};
+
+    #===== get subtasks as @subtask_array AND get URL as $note
+    #say $id_string;
+    $respond = `echo \"$id_string\" | ./grapDLCount`;
+     
+    my $full_id_string = $id_string . $id_string_hash{$task_id};
+    my $note = `echo \"$full_id_string\" | ./createDLSiteUrl`;
+
+    my $data = decode_json( encode('UTF-8', $respond) );
+    my @data_array = @$data;
+    my @subtask_array;
+    foreach(@data_array){
+        my %data_hash = %$_;
+        my $sub_task = "$data_hash{dl_count} | $data_hash{title} $data_hash{id}";
+        unshift @subtask_array, $sub_task;
+    }
+
+    #----- add subtask
+    my %post_data;
+    my $post_data_json;
+    my $command;
+    foreach (@subtask_array) {
+        $_ =~ s/"/@/g;
+        $_ =~ s/'/@/g;
+        %post_data = ( task_id => $task_id, title => $_ );
+        $post_data_json = encode_json(\%post_data);
+        #say $post_data_json;
+        #$command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+        #            " -X POST -H \"Content-Type:application/json\"" . 
+        #            " -d '$post_data_json' $server_url/subtasks";
+        $command =  "curl -s -H 'X-Access-Token: $token' -H 'X-Client-ID: $client_id'" . 
+                    " -X POST -H 'Content-Type:application/json'" . 
+                    " -d '$post_data_json' $server_url/subtasks";
+
+                    #say $command;
+        $respond = `$command`;
+        #say $respond;
+        #&check_respond('die');
+        my $data = decode_json( encode('UTF-8', $respond) );
+        my %data_hash = %$data;
+        push @current_task_array, \%data_hash;
+    }
+
+
+    #----- reorder subtask
+    @current_task_array = sort aaaa @current_task_array;
+    sub aaaa{
+        my %ah = %$a;
+        my %bh = %$b;
+        $ah{title} =~ /^(?<a_count>\d*)/;
+        my $a_dlc = $+{a_count} + 0;
+        $bh{title} =~ /^(?<b_count>\d*)/;
+        my $b_dlc = $+{b_count} + 0;
+        $b_dlc <=> $a_dlc;
+    }
+
+    my @subtask_id_array = ();
+    foreach(@current_task_array){
+        my %data_hash = %$_;
+        push @subtask_id_array, $data_hash{id};
+    }
+
+    #my $new_position = encode_json \@subtask_id_array;
+
+    #----- position order
+    my %post_data = ( revision => $pos_revision, values => \@subtask_id_array );
+    $post_data_json = encode_json(\%post_data);
+    $command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+                " -X PATCH -H \"Content-Type:application/json\"" . 
+                " -d '$post_data_json' $server_url/subtask_positions/$task_id";
+    $respond = `$command`;
+    &check_respond('warn');
+    #say $command;
+    #$revision++;
+
+    #---- note
+    %post_data = ( revision => $note_revision, content => $note );
+    $post_data_json = encode_json(\%post_data);
+    $command =  "curl -s -H \"X-Access-Token: $token\" -H \"X-Client-ID: $client_id\"" . 
+                " -X PATCH -H \"Content-Type:application/json\"" . 
+                " -d '$post_data_json' $server_url/notes/$note_id";
+    $respond = `$command`;
+    #say $command;
+    &check_respond('warn');
+    #$revision++;
+    #===== publish success, update DB and print summary
+    my @new_id_array = split /\n/ , $id_string;
+    if(@new_id_array){
+        foreach(@new_id_array){ $_ = "'$_'"};
+        $id_string = join ',', @new_id_array;
+        $command = "sqlite3 $db " . 
+            '"UPDATE voiceWork SET read = 4  WHERE id IN ( ' . $id_string . ' );"';
+        say 'fail !!' if ( `$command` ne '');
+    }
+    my $count_of_subtask_array = @subtask_array;
+    say "$genre_hash{$task_id} : $count_of_subtask_array";
+
+}
+
+#print $return_value;
+
+sub check_respond{
+    my $func_str = $_[0];
+    if($respond =~ /"id"/ eq ''){
+        $return_value = 1;
+        if($func_str eq 'die'){
+            die "sendWunderlist : add task error: $respond";
+        }else{
+            warn "sendWunderlist : add task error: $respond";
+        }
+    }
+}
+
+
+

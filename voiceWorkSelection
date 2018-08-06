@@ -1,0 +1,91 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use utf8;
+use Encode;
+use DBI;
+use Data::Dumper;
+use Getopt::Std;
+
+use DJVoiceConfig;
+
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+#my $list_id = 355061803; # オススメ作品
+
+my $task_id = shift @ARGV;
+my $space = shift @ARGV;
+my @current_id_array = @ARGV;
+
+#$task_id = 3962573551;
+#$task_id = 3969185019;
+#$task_id = 3962578701;
+#$space = 50;
+
+exit if($space == 0);
+
+my $database = $DJVoiceConfig::POP_DATABASE_PATH;
+
+my $current_id_string = '';
+if(@current_id_array){
+    foreach(@current_id_array){ $_ = "'$_'"};
+    $current_id_string = join ',', @current_id_array;
+    $current_id_string = ' AND id NOT IN ( '. $current_id_string . ' ) ';
+
+}
+
+my @task_array = @DJVoiceConfig::RECOMMEND_CRITERIA_ARRAY;
+
+#say $list_id;
+my $query = '';
+my $string = '';
+foreach(@task_array){
+    my %data_hash = %$_;
+    if($task_id eq $data_hash{task_id}){
+        
+        $string =  $data_hash{query};
+        $string =~ s/(^|\W)\s*\[/$1tag\[/g;
+        $string =~ s/\&/ AND /g;
+        $string =~ s/\|/ OR /g;
+        $string =~ s/!/ NOT /g;
+        $string =~ s/\(/ \( /g;
+        $string =~ s/\)/ \) /g;
+        $string =~ s/\[/ GLOB '\*/g;
+        $string =~ s/\]/\*'/g;
+    }
+}
+$string = Encode::decode_utf8( $string );
+#Encode::_utf8_on($string);
+#say "query = $string"; exit;
+
+exit if($string eq '');
+$query = "sqlite3 $database " . 
+    '"SELECT id FROM voiceWork WHERE CAST(read AS INT) = 4 AND ( ' . 
+    #'"SELECT id, read, dl_count, tag FROM voiceWork WHERE  ( ' . 
+    $string . ' ) '. $current_id_string .
+    ' ORDER BY CAST(dl_count AS INT) DESC LIMIT '. $space . ';"';
+$query =~ s/\s+/ /g;
+#Encode::_utf8_on($query);
+#say $query;
+my $respond = `$query`;
+$space -= split /\n/, $respond;
+print $respond;
+
+$query = "sqlite3 $database " . 
+    '"SELECT id FROM voiceWork WHERE CAST(read AS INT) > 0 AND CAST(read AS INT) < 4 AND ( ' . 
+    #'"SELECT id, read, dl_count, tag FROM voiceWork WHERE  ( ' . 
+    $string . ' ) ORDER BY CAST(dl_count AS INT) DESC LIMIT '. $space . ';"';
+$query =~ s/\s+/ /g;
+
+print `$query`;
+
+# system($string);
+
+

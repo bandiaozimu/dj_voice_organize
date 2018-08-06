@@ -1,0 +1,76 @@
+#! /usr/bin/perl
+
+use 5.014;
+use autodie;
+#use LWP::Simple;
+use Web::Query;
+use JSON;
+use Encode;
+use Data::Dumper;
+use DBI;
+use DJVoiceConfig;
+
+use open ":encoding(utf8)";
+binmode(STDIN, ':encoding(utf8)');
+binmode(STDOUT, ':encoding(utf8)');
+binmode(STDERR, ':encoding(utf8)');
+
+if(! ($ARGV[0] =~ /(RJ[0-9]{6})/) ){
+    die 'need RJ###### in $ARGV[0]';
+}
+my $target = $1;
+
+my $driver = "SQLite";
+my $database = $DJVoiceConfig::PUSH_DATABASE_PATH;
+my $dsn = "DBI:$driver:dbname=$database";
+my $userid = "";
+my $password = "";
+my $dbh = DBI->connect($dsn, $userid, $password, { RaiseError => 1 }) 
+                      or die $DBI::errstr;
+
+# print "Opened database successfully\n";
+
+my $stmt = "SELECT COUNT(id), id, title, circle_name, date FROM voiceWork WHERE id = '$target';";
+
+my $sth = $dbh->prepare( $stmt );
+my $rv = $sth->execute() or die $DBI::errstr;
+if($rv < 0){
+    print $DBI::errstr;
+}
+my @row = $sth->fetchrow_array();
+
+my $param;
+if($row[0]) { 
+    $param->{'id'  }            =  decode('UTF-8', $row[1]);
+    $param->{'title'  }         =  decode('UTF-8', $row[2]);
+    $param->{'circle_name' }    =  decode('UTF-8', $row[3]);
+    $param->{'date'   }         =  decode('UTF-8', $row[4]);
+    $param->{'genre'  }         =  decode('UTF-8', '同人音声');
+}else{
+    my $working_dir = $DJVoiceConfig::WORKING_DIR;
+    #my $target = 'RJ128196';
+
+    my $json_text = `$working_dir/grapDLSite $target`;
+    my $json_utf8 = encode('UTF-8', $json_text);
+    $param = decode_json($json_utf8);
+}
+
+
+my $id              =  $param->{'id'  };   
+my $title           =  $param->{'title'  };   
+my $circle_id       =  $param->{'circle_id' };   
+my $circle_name     =  $param->{'circle_name' };   
+my $image           =  $param->{'image'  };   
+my $date            =  $param->{'date'   };   
+my $tag             =  $param->{'tag'  };   
+my $vocal           =  $param->{'vocal'  };   
+my $genre           =  $param->{'genre'  };   
+
+$date =~ s/-//g; 
+
+my $name =  "[$date] [$circle_name] $title $id";
+$name =~ s/\//@/g;
+if($genre ne ''){ $name = "($genre) " . $name ; };
+print $name;
+
+
