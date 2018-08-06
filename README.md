@@ -77,11 +77,11 @@ brew install coreutils
 2. 编辑`DJVoiceConfig.pm.sample` 根据你的环境修改以下参数，并重新命名为`DJVoiceConfig.pm`：
 
     ```
-    $WORKING\_DIR
-    $CATCHE\_DIR
-    $JDOWNLOADER\_DOWNLOAD\_DIR  # Jdownloader 的下载路径，最好是给音声作品专用，喂的资料越乱，出错的机率会升高。
-    $PUSH\_DATABASE\_PATH
-    $PUSH\_STORAGE\_PATH
+    $WORKING_DIR
+    $CATCHE_DIR
+    $JDOWNLOADER_DOWNLOAD_DIR  # Jdownloader 的下载路径，最好是给音声作品专用，喂的资料越乱，出错的机率会升高。
+    $PUSH_DATABASE_PATH
+    $PUSH_STORAGE_PATH
     ```
 
 3. 运行下列指令，会根据`DJVoiceConfig.pm` 定义的路径修改各shell script。
@@ -103,7 +103,7 @@ brew install coreutils
 - 注1：资料库里有我已经建档3000+个作品的基本资料，所以不会全都从DLSite上捞，但封面每部作品都要捞，动作太密集有被
 拉黑的可能。
 - 注2： -s 是安静模式，此模式下`buildVoiceWork.sh` 不会做与wunderlist推播通知相关的运算。
-- 注3：若不指定路径，`buildVoiceWork.sh` 预设会处理 `$JDOWNLOADER\_DOWNLOAD\_DIR`。
+- 注3：若不指定路径，`buildVoiceWork.sh` 预设会处理 `$JDOWNLOADER_DOWNLOAD_DIR`。
 
 
 与 WunderList 协作
@@ -121,9 +121,9 @@ brew install coreutils
 2. 编辑`DJVoiceConfig.pm` 修改以下参数：
 
     ```
-    $POP\_DATABASE\_PATH    # setup -w 会透过此参数找资料库
-    $WUNDERLIST\_TOKEN
-    $WUNDERLIST\_CLIENT\_ID
+    $POP_DATABASE_PATH    # setup -w 会透过此参数找资料库
+    $WUNDERLIST_TOKEN
+    $WUNDERLIST_CLIENT_ID
     $WUNDERLIST_RECEIVER_EMAIL
     ```
 
@@ -133,29 +133,37 @@ brew install coreutils
     ./setup -w
     ```
 
-4. 两个清单分别为： ダウンロード(下载)，オススメ作品(推荐作品)，“ダウンロード”会在主机端处理新作品时用到；
-“オススメ作品” 则会在客户端的iTunes汇入作品时使用。
+    两个清单分别为： ダウンロード(下载)，オススメ作品(推荐作品)，“ダウンロード”会在主机端处理新作品时用到；
+    “オススメ作品” 则会在客户端的iTunes汇入作品时使用。
 
-- 注1：往后如果想设计自己的推荐清单，可以先修改 `@RECOMMEND\_CRITERIA\_ARRAY`，再运行此指令，运行过程中`setup -w` 会
+4. 运行下列指令，会在WunderList的推荐清单里填入符合条件的作品，第一次运行会比较花时间，而且有时会因为
+   Wunderlist回应404导至脚本中止，多运行几次即可。：
+
+    ```
+    ./reflashRecommendList
+    ```
+
+- 注1：往后如果想设计自己的推荐清单，可以先修改 `@RECOMMEND_CRITERIA_ARRAY`，再运行此指令，运行过程中`setup -w` 会
 检查 query 的语法，没问题才新增待办事项(task)。
 
-- 注2：只要 `$POP\_DATABASE\_PATH` 正确， `setup -w` 不论在主机端还是客户端都能运行。
+- 注2：只要 `$POP_DATABASE_PATH` 正确， `setup -w` 不论在主机端还是客户端都能运行。
 
+- 注3：可修改`DJVoiceConfig.pm` 的`$COLUMN_OF_RECOMMEND_LIST` 参数，增加清单长度。
 
 安装客户端程式
 -----------------------
 
 1. 请确认客户端的预设解压缩程式，在完成解压缩后会删除压缩档，本程式依靠压缩档的消失来判断解压完成与否。
 
-2. 将主机端的 `dj\_voice\_organize` 资料夹复制一份到客户端上，如果没有做主机／客户端配置，则跳至步骤3。
+2. 将主机端的 `dj_voice_organize` 资料夹复制一份到客户端上，如果没有做主机／客户端配置，则跳至步骤3。
 
 3. 编辑客户端的`DJVoiceConfig.pm` 根据你的环境修改以下参数：
 
     ```
-    $WORKING\_DIR
-    $POP\_STORAGE\_PATH      # 以客户端为起点，指向与主机端$PUSH\_STORAGE\_PATH 所指的同一个资料夹 
-    $POP\_DATABASE\_PATH     # 以客户端为起点，指向与主机端$PUSH\_DATABASE\_PATH 所指的同一个资料库 
-    $ITUNES\_PATH
+    $WORKING_DIR
+    $POP_STORAGE_PATH      # 以客户端为起点，指向与主机端$PUSH_STORAGE_PATH 所指的同一个资料夹 
+    $POP_DATABASE_PATH     # 以客户端为起点，指向与主机端$PUSH_DATABASE_PATH 所指的同一个资料库 
+    $ITUNES_PATH
     ```
 
 4. 运行下列指令，会根据`DJVoiceConfig.pm` 定义的路径修改各shell script。
@@ -163,15 +171,6 @@ brew install coreutils
     ```
     ./setup -p
     ```
-
-5. 运行下列指令，会在WunderList的推荐清单里填入符合条件的作品，第一次运行会比较花时间：
-
-    ```
-    ./reflashRecommendList
-    ```
-
-- 注：可修改`DJVoiceConfig.pm` 的`$COLUMN\_OF\_RECOMMEND\_LIST` 参数，增加清单长度。
-
 
 运行客户端程式
 -----------------------
@@ -216,11 +215,11 @@ brew install coreutils
 2. 编辑主机端的`DJVoiceConfig.pm` 根据你的喜好修改以下参数：
 
     ```
-    $NOTIFY\_DEFAULT\_THRESHOLD
-    %NOTIFY\_CRITERIA\_HASH\_VOCAL
-    %NOTIFY\_CRITERIA\_HASH\_HOLD\_TAG
-    %NOTIFY\_CRITERIA\_HASH\_PASS\_TAG
-    %NOTIFY\_CRITERIA\_HASH\_CIRCLE
+    $NOTIFY_DEFAULT_THRESHOLD
+    %NOTIFY_CRITERIA_HASH_VOCAL
+    %NOTIFY_CRITERIA_HASH_HOLD_TAG
+    %NOTIFY_CRITERIA_HASH_PASS_TAG
+    %NOTIFY_CRITERIA_HASH_CIRCLE
     ```
 
    新作品的推播筛选，是根据发行社团，属性标签，声优决定的。三者决定一个阀值，当下载数大于阀值则发
@@ -245,7 +244,7 @@ brew install coreutils
     //var name = archive.getName()
     //var label = archive.getDownloadLinks() && archive.getDownloadLinks()[0].getPackage().getComment() ? archive.getDownloadLinks()[0].getPackage().getComment() : 'N/A'
 
-    //var command = [script, path, name, label, 'ARCHIVE\_EXTRACTED']
+    //var command = [script, path, name, label, 'ARCHIVE_EXTRACTED']
     var command = [script]
 
     log(command)
@@ -262,8 +261,8 @@ brew install coreutils
 1. 修改`DJVoiceConfig.pm` ：
 
     ```
-    $JDOWNLOADER\_WATCH\_DIR  # Jdownloader 2 监控的资料夹，放入.crawjob 就会新增下载任务
-    $USING\_FLEXGET           # 设为1
+    $JDOWNLOADER_WATCH_DIR  # Jdownloader 2 监控的资料夹，放入.crawjob 就会新增下载任务
+    $USING_FLEXGET           # 设为1
     ```
 
 2. FlexGet 的 exec 需完成以下几项工作：

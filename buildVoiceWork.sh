@@ -127,7 +127,7 @@ if ls ${target}/*RJ* 1> /dev/null 2>&1; then
     if [ ! -s ${date1}.err.log ] ; then
         rm ${date1}.err.log
         rm new_works.json ${old_work_json_file} ${select_json_file}
-        find RJ*.html -exec rm {} \;
+        find . -name "RJ*.html" -exec rm {} \;
     else
         mv new_works.json ${old_work_json_file} ${select_json_file} "${path2}"
     fi

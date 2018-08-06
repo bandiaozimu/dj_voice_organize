@@ -154,6 +154,7 @@ if(defined $opts{w}){
             
             say "replace $task_id to $new_task_id";
             system("gsed -i '/RECOMMEND_CRITERIA_ARRAY/,/$task_id/{s/$task_id/$new_task_id/}' DJVoiceConfig.pm");
+            system("gsed -i '/task_id *=> *$new_task_id/,/enable/{s/enable.*/enable  => 1,/}' DJVoiceConfig.pm");
         }
     }
     # ===== share list

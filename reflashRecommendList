@@ -61,7 +61,6 @@ my @origin_respond_array = @$data;
 #===== delete complete subtask ( real complete by itunes ) get ** task_id:space ** as return
 #===== create *** %id_string_hash  *** with $respond from ****CURL GET 
 #===== create *** %subtask_id_string_hash *** with $respond from ****CURL GET 
-
 my %id_string_hash;
 my %subtask_count_hash;
 my %subtask_id_string_hash;
@@ -91,6 +90,7 @@ my %genre_hash;
 my %space_hash;
 foreach(@table_array){
     my %hash = %$_;
+    next if($hash{enable} == 0);
     my $task_id = $hash{task_id};
     my $count = $subtask_count_hash{$task_id} // 0;
     $space_hash{$task_id} = $DJVoiceConfig::COLUMN_OF_RECOMMEND_LIST - $count;
@@ -98,13 +98,18 @@ foreach(@table_array){
 
     $genre_hash{$task_id} = $hash{title};
     Encode::_utf8_on($genre_hash{$task_id});
+#    say "$space_flag | $task_id $genre_hash{$task_id} : $space_hash{$task_id}";
 }
-# while(my($task_id, $count) = each %subtask_count_hash){
-#     my $space = $space_hash{$task_id} -= $count;
-#     $space_flag |= 1 if($space != 0);
-#     Encode::_utf8_on($genre_hash{$task_id});
-#     #say "$task_id $genre_hash{$task_id} : $space";
-# }
+#print Dumper(\%subtask_count_hash);
+
+#while(my($task_id, $count) = each %subtask_count_hash){
+#    $space_hash{$task_id} = $DJVoiceConfig::COLUMN_OF_RECOMMEND_LIST - $count;
+#    $space_flag |= 1 if($space_hash{$task_id} != 0);
+#    my ($current_criteria) = grep { $_->{task_id} eq $task_id }@table_array;
+#    $genre_hash{$task_id} = $current_criteria->{title};
+#    Encode::_utf8_on($genre_hash{$task_id});
+#    say "$space_flag | $task_id $genre_hash{$task_id} : $space_hash{$task_id}";
+#}
 
 #----- exit if there is no space
 if($space_flag == 0){
