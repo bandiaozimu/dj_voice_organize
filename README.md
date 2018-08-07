@@ -143,10 +143,11 @@ brew install coreutils
     ./reflashRecommendList
     ```
 
-- 注1：往后如果想设计自己的推荐清单，可以先修改 `@RECOMMEND_CRITERIA_ARRAY`，再运行此指令，运行过程中`setup -w` 会
-检查 query 的语法，没问题才新增待办事项(task)。
+- 注1：往后如果想设计自己的推荐清单，可以先修改 `@RECOMMEND_CRITERIA_ARRAY`，再运行`setup -w` ，過程会检查
+  query 的语法，没问题才新增待办事项(task)。
 
-- 注2：只要 `$POP_DATABASE_PATH` 正确， `setup -w` 不论在主机端还是客户端都能运行。
+- 注2：`setup -w`會改動`DJVoiceWorkConfig.pm`，除了安裝時是先在主機端執行，再複製去客戶端外，往後請在客戶端
+  作`setup -w`。
 
 - 注3：可修改`DJVoiceConfig.pm` 的`$COLUMN_OF_RECOMMEND_LIST` 参数，增加清单长度。
 
