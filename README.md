@@ -146,7 +146,7 @@ brew install coreutils
 - 注1：往后如果想设计自己的推荐清单，可以先修改 `@RECOMMEND_CRITERIA_ARRAY`，再运行`setup -w` ，過程会检查
   query 的语法，没问题才新增待办事项(task)。
 
-- 注2：`setup -w`會改動`DJVoiceWorkConfig.pm`，除了安裝時是先在主機端執行，再複製去客戶端外，往後請在客戶端
+- 注2：`setup -w`会改动`DJVoiceWorkConfig.pm`，除了安装时是先在主机端执行，再复制去客户端外，往后请在客户端
   作`setup -w`。
 
 - 注3：可修改`DJVoiceConfig.pm` 的`$COLUMN_OF_RECOMMEND_LIST` 参数，增加清单长度。
