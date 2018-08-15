@@ -90,7 +90,7 @@ our $NEW_VOICEWORK_LIST_ID      = 359741286; # ダウンロード(下載) ID
 our $RECOMMEND_LIST_ID          = 359744700; # オススメ作品(推薦清單) ID
 our $SENDER_INBOX_LIST_ID       = 351021841; # 發送端的INBOX ID
 
-our $COLUMN_OF_RECOMMEND_LIST   = 3; # 推薦清單長度
+our $COLUMN_OF_RECOMMEND_LIST   = 2; # 推薦清單長度
 
 
 # ==============================================================================================

@@ -5,7 +5,7 @@ working_dir='/Users/hentai/git/dj_voice_organize'
 
 cd ${working_dir}
 mkdir -p copy
-rm -rf copy/*
+#rm -rf copy/*
 
 # ================================================================================
 # fetchVoiceWork：從DJVoiceConfig.pm 裡定義的$POP_STORAGE_PATH 路徑下載作品，參數說明如下：
