@@ -12,7 +12,8 @@
 6. 配合Wunderlist的推播功能，可在下载完成推送通知，还可筛选推送的作品。
 7. 本程式支持主机／客户端的配置方式，即主机运行 FlexGet，JDownloader，及保存作品资料；
    客户端运行解压缩，转档，封面，id3 tag，汇入iTunes。
-8. 本程式会将属性标签(调教/中出し/ナース...等) 嵌入id3 tag的“注解”中，方便iTues建立智慧播放清单。
+8. 本程式会将属性标签(调教/中出し/ナース...等) 嵌入id3 tag的“注解”中，而下载数则嵌為bpm（每100次為1bpm）
+，方便iTues建立智慧播放清单。
 
 ![Image of Yaktocat](https://i.imgur.com/K5dpv8L.jpg)
 ![Image of Yaktocat](https://i.imgur.com/NutkgUX.png)
