@@ -19,6 +19,7 @@ binmode(STDIN, ':encoding(utf8)');
 binmode(STDOUT, ':encoding(utf8)');
 binmode(STDERR, ':encoding(utf8)');
 
+my $working_dir = $DJVoiceConfig::WORKING_DIR;
 my $db      = $DJVoiceConfig::POP_DATABASE_PATH;
 
 my $i = 0;
@@ -147,6 +148,10 @@ foreach(@dir_array){
 
     my $artwork = `find "$_" -maxdepth 1 -name '*.jpg' | head -n 1`;
     $artwork = `find "$_" -name '*.jpg' | head -n 1` if($artwork eq '');
+    if (!$artwork) {
+        $artwork = "$working_dir/no_img_main.jpg";
+    }
+        
     chomp($artwork);
 
 
