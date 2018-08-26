@@ -151,7 +151,6 @@ foreach(@dir_array){
     if (!$artwork) {
         $artwork = "$working_dir/no_img_main.jpg";
     }
-        
     chomp($artwork);
 
 
