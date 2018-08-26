@@ -64,7 +64,7 @@ foreach $i ( 0..$#urls ){
             $result{'title'} = $_->find('img')->attr('title');
             # **** title will block by updateDLSilteDB from update
             $result{'text'} = $_->find('dd.work_text')->text();
-            $result{'text'} =~ s/…/.../;
+            $result{'text'} =~ s/…/.../g;
             $result{'image'} = $image;
             #Encode::_utf8_on($result{'title'});
             #Encode::_utf8_on($result{'text'});
